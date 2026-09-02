@@ -83,7 +83,7 @@ rmse_test  <- acc_tbats["Test set", "RMSE"]
 cat("rmse_ratio_holdout:", rmse_test / rmse_train,
     " mase_gap_pct_holdout:", abs(mase_test - mase_train) / mase_test, "\n")
 
-dir.create("output/plots/ChiaZY_tbats", recursive = TRUE, showWarnings = FALSE)
-png("output/plots/ChiaZY_tbats/resid_tbats.png", width = 800, height = 600, res = 150)
+dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
+png("output/plots/group_summary/resid_D_tbats.png", width = 800, height = 600, res = 150)
 forecast::checkresiduals(fit_tbats)
 dev.off()

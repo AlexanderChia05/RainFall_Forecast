@@ -92,6 +92,6 @@ acc_train |> left_join(acc_test, by = ".model") |>
   mutate(rmse_ratio = RMSE_test / RMSE_train,
          mase_gap_pct = abs(MASE_test - MASE_train) / MASE_test)
 
-dir.create("output/plots/ChanYH_ets", recursive = TRUE, showWarnings = FALSE)
-ggsave("output/plots/ChanYH_ets/resid_ets.png",
+dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
+ggsave("output/plots/group_summary/resid_A_ets.png",
        fit |> select(ets) |> gg_tsresiduals(), width = 8, height = 6, dpi = 150)

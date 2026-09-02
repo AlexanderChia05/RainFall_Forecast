@@ -82,6 +82,6 @@ acc_train |> left_join(acc_test, by = ".model") |>
   mutate(rmse_ratio = RMSE_test / RMSE_train,
          mase_gap_pct = abs(MASE_test - MASE_train) / MASE_test)
 
-dir.create("output/plots/StephQF_arima", recursive = TRUE, showWarnings = FALSE)
-ggsave("output/plots/StephQF_arima/resid_arima_four4.png",
+dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
+ggsave("output/plots/group_summary/resid_B_arima.png",
        fit |> select(arima_four4) |> gg_tsresiduals(), width = 8, height = 6, dpi = 150)
