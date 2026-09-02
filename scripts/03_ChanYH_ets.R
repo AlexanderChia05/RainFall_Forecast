@@ -12,8 +12,12 @@
 # removed once the search phase was done, numbers held here for the
 # record): ets_auto (unconstrained) and this ets_notrend spec landed on
 # the SAME fit byte-for-byte on this data snapshot - MASE_train=0.738,
-# RMSE_train=2.44, mean_MASE_cv=0.813, mean_RMSE_cv=2.55, ratio=1.05,
-# gap=9.2%, p12=0.522, p24=0.122 for both. Forced explicitly (rather
+# RMSE_train=2.44, mean_MASE_cv=0.805, mean_RMSE_cv=2.54, ratio=1.04,
+# gap=8.3%, p12=0.522, p24=0.122 for both (final numbers per the 29-
+# fold-clean CV, see 07_group_comparison.R - a slightly earlier, pre-
+# fold-parity-fix run of this same spec had shown 0.813/2.55/1.05/9.2%;
+# the fold-count fix nudged these numbers slightly, not the model
+# itself). Forced explicitly (rather
 # than relying on ETS() to keep re-deriving the same answer) so the
 # pick doesn't silently drift to a different structure if the series is
 # re-pulled with a few more months and auto-selection's AICc comparison
@@ -33,10 +37,11 @@
 # Diagnostics (single holdout, from the grid search): p=0.522 (lag12),
 # p=0.122 (lag24) - clears both conventions with real margin, unlike
 # ozone's NNAR (thin 0.0594) or any ETS variant tried on ozone/trade
-# (all rejected, best case ~0.00087). 6-fold-equivalent rolling CV
-# (29 folds, .step=6): RMSE ratio = 1.05 (within the 1.3x rule), MASE
-# gap = 9.2% (within the group's own 10% target - a first across all
-# 3 topics attempted this project).
+# (all rejected, best case ~0.00087). 29-fold rolling CV (.init=360,
+# .step=6, capped to exclude the one partial-horizon fold - see
+# 07_group_comparison.R): RMSE ratio = 1.04 (within the 1.3x rule),
+# MASE gap = 8.3% (within the group's own 10% target - a first across
+# all 3 topics attempted this project).
 
 source("scripts/00_setup.R")
 rain <- readRDS("data/rain.rds")

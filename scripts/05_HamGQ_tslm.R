@@ -28,8 +28,10 @@
 # simply isn't triggered by this topic's residual structure.
 #
 # Diagnostics (single holdout): p=0.476 (lag12), p=0.148 (lag24) -
-# clears both. 30-fold rolling CV: RMSE ratio = 1.05, MASE gap = 9.3%
-# (within the group's 10% target).
+# clears both. 29-fold rolling CV: RMSE ratio = 1.05, MASE gap = 8.9%
+# (within the group's 10% target; final numbers per the 29-fold-clean
+# CV, see 07_group_comparison.R - an earlier pre-fold-parity-fix run
+# showed 9.3%, same ratio).
 
 source("scripts/00_setup.R")
 rain <- readRDS("data/rain.rds")

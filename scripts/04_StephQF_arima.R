@@ -12,8 +12,10 @@
 # removed once the search phase was done - both variants' full numbers
 # held here for the record):
 #   arima_fourierK4 (picked): MASE_train=0.738, RMSE_train=2.44,
-#     mean_MASE_cv=0.801, mean_RMSE_cv=2.52, ratio=1.03, gap=7.8%,
-#     p12=0.553, p24=0.137
+#     mean_MASE_cv=0.797, mean_RMSE_cv=2.51, ratio=1.03, gap=7.3%,
+#     p12=0.553, p24=0.137 (final numbers per the 29-fold-clean CV -
+#     an earlier pre-fold-parity-fix run showed 0.801/2.52/7.8%, same
+#     ratio; see 07_group_comparison.R for the fold-count fix)
 #   arima_fourierK6: MASE_train=0.737, RMSE_train=2.43,
 #     mean_MASE_cv=0.804, mean_RMSE_cv=2.53, ratio=1.04, gap=8.3%,
 #     p12=0.573, p24=0.122
@@ -29,12 +31,11 @@
 # not redundant with what auto-ARIMA finds alone.
 #
 # Diagnostics (single holdout): p=0.553 (lag12), p=0.137 (lag24) - both
-# clear 0.05 with real margin. 30-fold rolling CV: RMSE ratio = 1.03 (an
-# almost dead heat with 1.0, best of all 12 variants across 4 families
-# that passed both LB lags AND cleared the 1.3x rule - TBATS excepted,
-# see 06_ChiaZY_tbats.R), MASE gap = 7.8% - one of only 3 picks across 3
-# topics this project attempted (ozone, trade, rain) that clears the
-# group's original 10% overfitting target outright.
+# clear 0.05 with real margin. 29-fold rolling CV: RMSE ratio = 1.03 (an
+# almost dead heat with 1.0, best of the 3 fable members - TBATS still
+# ahead overall, see 06_ChiaZY_tbats.R), MASE gap = 7.3% - one of only 3
+# picks across 3 topics this project attempted (ozone, trade, rain)
+# that clears the group's original 10% overfitting target outright.
 
 source("scripts/00_setup.R")
 rain <- readRDS("data/rain.rds")
