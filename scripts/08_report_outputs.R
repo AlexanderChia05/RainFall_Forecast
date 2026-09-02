@@ -26,15 +26,15 @@ overlay_red_actual <- function(member_name) {
 }
 
 p_A <- overlay_red_actual("ets_A") +
-  labs(title = "Member A - ETS: Forecast vs Actual", y = "mm/day", x = NULL)
+  labs(title = "ETS: Forecast vs Actual", y = "mm/day", x = NULL)
 ggsave("output/plots/group_summary/fc_A_ets.png", p_A, width = 8, height = 5, dpi = 150)
 
 p_B <- overlay_red_actual("arima_B") +
-  labs(title = "Member B - ARIMA+Fourier(K=4): Forecast vs Actual", y = "mm/day", x = NULL)
+  labs(title = "ARIMA+Fourier(K=4): Forecast vs Actual", y = "mm/day", x = NULL)
 ggsave("output/plots/group_summary/fc_B_arima.png", p_B, width = 8, height = 5, dpi = 150)
 
 p_C <- overlay_red_actual("tslm_C") +
-  labs(title = "Member C - TSLM: Forecast vs Actual", y = "mm/day", x = NULL)
+  labs(title = "TSLM: Forecast vs Actual", y = "mm/day", x = NULL)
 ggsave("output/plots/group_summary/fc_C_tslm.png", p_C, width = 8, height = 5, dpi = 150)
 
 # ---- D: TBATS (forecast::, not fable) - manual data frame, same 3-
@@ -56,7 +56,7 @@ p_D <- ggplot() +
   geom_line(data = tbats_train_hist, aes(month, value), color = "black", linewidth = 0.6) +
   geom_line(data = tbats_fc, aes(month, value), color = "steelblue4", linewidth = 0.7) +
   geom_line(data = test_actual_tbl, aes(month, precip), color = "red", linewidth = 0.45) +
-  labs(title = "Member D - TBATS: Forecast vs Actual", y = "mm/day", x = NULL) +
+  labs(title = "TBATS: Forecast vs Actual", y = "mm/day", x = NULL) +
   theme_minimal()
 ggsave("output/plots/group_summary/fc_D_tbats.png", p_D, width = 8, height = 5, dpi = 150)
 

@@ -1,30 +1,10 @@
-# 07_group_comparison.R - group leader script. SHARED TOPIC: KL monthly
-# precipitation (mm/day), NASA POWER 1981-2025 (540 obs). SDG 13.
-# Combines the 4 final models (one per member, every one verified to
-# pass Ljung-Box at BOTH lag=12/24 AND clear the group's RMSE-ratio
-# <1.3x rule - see 03-06 headers for the family-selection evidence)
-# into one train/test comparison.
-#
-# Member D (tbats_D) is NOT a fable model (forecast::tbats(), see
-# 06_ChiaZY_tbats.R header for why it replaced STL) - it's fit and
-# scored separately below, then merged into the same summary tables as
-# the 3 fable members (ets_A, arima_B, tslm_C) using matching column
-# names throughout (same bridging pattern as BATS in the ozone/v1
-# project's group script).
-
 source("scripts/00_setup.R")
 rain <- readRDS("data/rain.rds")
 
 h <- 12
 train <- rain |> filter(month <= max(month) - h)
 
-# The 3 fable-native models, one per member (see 03-05 headers for the
-# diagnostics/evidence behind each pick):
-#   A - ETS (trend explicitly forced off, not auto)      (03_ChanYH_ets.R)
-#   B - ARIMA + Fourier(K=4), seasonal search off        (04_StephQF_arima.R)
-#   C - TSLM (trend + Fourier(K=4))                      (05_HamGQ_tslm.R)
-# Member D (TBATS, not fable-native) is fit separately below - see
-# 06_ChiaZY_tbats.R header.
+# The 3 fable-native models
 set.seed(2026)
 fit <- train |> model(
   snaive  = SNAIVE(precip),
@@ -53,10 +33,7 @@ acf_check <- fit |>
 acc_train <- fit |> accuracy() |>
   select(member = .model, MASE_train = MASE, RMSE_train = RMSE)
 
-# --- Member D: TBATS (forecast::, not fable) -------------------------------
-# Single holdout fit + score, matching the fable members' train/test split
-# exactly (same h=12, same train cutoff). use.trend=FALSE per
-# 06_ChiaZY_tbats.R's evidence (tbats_notrend beat tbats_auto on CV).
+# TBATS
 train_ts   <- ts(train$precip, frequency = 12)
 fit_tbats  <- forecast::tbats(train_ts, use.box.cox = NULL, use.trend = FALSE,
                                use.damped.trend = FALSE, seasonal.periods = 12)
@@ -96,18 +73,8 @@ acc_train <- acc_train |> bind_rows(tibble(
   RMSE_train = acc_tbats_full["Training set", "RMSE"]
 ))
 
-# Rolling-origin CV (.init=360, .step=6). stretch_tsibble() generates
-# windows up to n=540 inclusive (31 total, k=0..30, origin=360+6k) - but
-# only k=0..28 (origin<=528) have a FULL 12-month actual future to score
-# against. k=29 (origin=534) only has 6 of 12 real months (535-540) and
-# still produces a non-NA MASE/RMSE from that partial horizon - filtering
-# on !is.na(MASE) alone lets this partial fold sneak into the average.
-# k=30 (origin=540) has 0 real future months and correctly comes back NA.
-# Explicitly cap at n_folds_clean=29 (.id <= 29, i.e. origin<=528) so
-# every fold here has a genuine complete 12-month horizon, matching
-# TBATS's manual loop exactly (both now compare the identical 29 origins,
-# 360 through 528) - not an approximate match, an exact one.
-n_folds_clean <- length(seq(360, nrow(rain) - h, by = 6))  # 29
+# Rolling-origin CV (.init=360, .step=6)
+n_folds_clean <- length(seq(360, nrow(rain) - h, by = 6)) 
 origins <- seq(360, nrow(rain) - h, by = 6)
 
 set.seed(2026)
@@ -129,8 +96,7 @@ cv_summary <- cv_acc |>
             min_MASE = min(MASE), max_MASE = max(MASE),
             mean_RMSE = mean(RMSE), n_folds = n())
 
-# TBATS CV: refit at each of the same origins (slower than the fable
-# picks - each fold is a fresh forecast::tbats() call).
+# TBATS CV
 cv_tbats <- map_dfr(origins, function(i) {
   tr  <- rain |> slice(1:i)
   te  <- rain |> slice((i + 1):(i + h)) |> pull(precip)
@@ -149,10 +115,7 @@ cv_summary <- cv_summary |> bind_rows(
 print(cv_summary)
 write.csv(cv_summary, "output/model_comparison_cv_summary.csv", row.names = FALSE)
 
-# Overfitting check (MUST) - both the group's original MASE-gap
-# convention and the RMSE-ratio<1.3x rule, both computed against the CV
-# mean (authoritative), not the single holdout (reference only, kept
-# alongside for transparency).
+# Overfitting check
 gap_tbl <- acc_train |>
   left_join(acc_test |> select(member, MASE_test_holdout = MASE, RMSE_test_holdout = RMSE), by = "member") |>
   left_join(cv_summary |> select(member, MASE_test_cv = mean_MASE, RMSE_test_cv = mean_RMSE), by = "member") |>
