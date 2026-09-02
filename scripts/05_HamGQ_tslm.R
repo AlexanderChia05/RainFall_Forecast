@@ -1,16 +1,19 @@
-# 06_HamGQ_tslm.R - SHARED TOPIC: KL monthly mean precipitation rate
+# 05_HamGQ_tslm.R - SHARED TOPIC: KL monthly mean precipitation rate
 # (mm/day), NASA POWER, 1981-2025 (540 obs). SDG 13 primary. Member C
-# model family: TSLM (time series linear regression: trend + seasonal
-# dummies).
+# model family: TSLM (time series linear regression).
 #
-# Model pick: TSLM(precip ~ trend() + season()). Verified via
-# 03_family_grid_search.R: tslm_fourier(K=4) scored marginally better
-# on CV ratio (1.05 vs trend+season's 1.06) but trend+season() is kept
-# as the member C pick for interpretability - the report can cite
-# individual monthly seasonal coefficients directly (e.g. "November's
-# coefficient is X mm/day above baseline"), which fourier's sin/cos
-# pairs can't offer directly. The numeric difference (1.05 vs 1.06) is
-# within noise, not a meaningful accuracy trade-off.
+# Model pick: TSLM(precip ~ trend() + fourier(K=4)). Switched from the
+# original trend()+season() pick once both variants' full numbers were
+# held side by side:
+#   tslm_fourier (picked):     ratio=1.05, gap=9.3%, p12=0.476, p24=0.148
+#   tslm_trendseason:          ratio=1.06, gap=9.3%, p12=0.494, p24=0.132
+# fourier wins on ratio and p24 (the harder lag to clear all round this
+# project); trend+season() wins narrowly on p12 only. Not a large gap
+# either way, but fourier is the numerically better pick on 2 of 3
+# tie-break metrics - going with the numbers rather than the earlier
+# interpretability argument (season() dummies read more directly as
+# "November's coefficient is X" in a report) now that "best model" is
+# the explicit criterion, not narrative convenience.
 #
 # Why TSLM works here (it failed on BOTH prior topics this project
 # tried): TSLM's OLS residuals are i.i.d.-assumed with no ARMA-error
@@ -24,8 +27,8 @@
 # signal behind - the family's structural weakness (no ARMA slot)
 # simply isn't triggered by this topic's residual structure.
 #
-# Diagnostics (single holdout): p=0.494 (lag12), p=0.132 (lag24) -
-# clears both. 29-fold rolling CV: RMSE ratio = 1.06, MASE gap = 9.3%
+# Diagnostics (single holdout): p=0.476 (lag12), p=0.148 (lag24) -
+# clears both. 30-fold rolling CV: RMSE ratio = 1.05, MASE gap = 9.3%
 # (within the group's 10% target).
 
 source("scripts/00_setup.R")
@@ -44,7 +47,7 @@ train <- rain |> filter(month <= max(month) - h)
 
 fit <- train |> model(
   snaive = SNAIVE(precip),
-  tslm   = TSLM(precip ~ trend() + season())
+  tslm   = TSLM(precip ~ trend() + fourier(K = 4))
 )
 fc <- fit |> forecast(h = h)
 fc |> accuracy(rain) |> select(.model, MASE, RMSE, MAE, MAPE) |> arrange(MASE)
@@ -63,7 +66,7 @@ augment(fit) |> filter(.model == "tslm") |> as_tibble() |>
             n_lags_out_24 = acf_out_of_bounds(.innov, lag.max = 24))
 
 # Overfitting check (single holdout, reference only - see
-# 08_group_comparison.R for the authoritative CV-based ratio/gap)
+# 07_group_comparison.R for the authoritative CV-based ratio/gap)
 acc_train <- fit |> accuracy() |> filter(.model == "tslm") |>
   select(.model, MASE_train = MASE, RMSE_train = RMSE)
 acc_test <- fc |> accuracy(rain) |> filter(.model == "tslm") |>

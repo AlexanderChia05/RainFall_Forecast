@@ -1,4 +1,4 @@
-# 05_StephQF_arima.R - SHARED TOPIC: KL monthly mean precipitation rate
+# 04_StephQF_arima.R - SHARED TOPIC: KL monthly mean precipitation rate
 # (mm/day), NASA POWER, 1981-2025 (540 obs). SDG 13 primary. Member B
 # model family: ARIMA with deterministic Fourier seasonal terms.
 #
@@ -8,23 +8,33 @@
 # 12-month signal and the fit becomes exactly singular (hit this bug in
 # the trade-topic grid search, fixed proactively here from the start).
 #
-# K=4, not K=2 or K=6 or plain auto: tested all four in
-# 03_family_grid_search.R. K=6 (max, Nyquist) scored marginally higher
-# MASE (0.814 vs K=4's 0.843 on single holdout) but K=4 has the lower
-# CV-based RMSE ratio (1.03 vs K=6's 1.04) and lower MASE gap (7.8% vs
-# 8.3%) - fewer parameters generalise very slightly better, same
-# "simpler wins on CV even when single-holdout MASE looks better"
-# pattern as the ozone project's member B (K=1 over K=2 there). Plain
-# arima_auto (no fourier at all) failed Ljung-Box outright (p=0.266
-# @lag12 but p=0.000632 @lag24) - the deterministic seasonal term is
-# doing real work here, not redundant with what auto-ARIMA finds alone.
+# K=4, not K=2 or K=6 or plain auto: tested all four (grid search since
+# removed once the search phase was done - both variants' full numbers
+# held here for the record):
+#   arima_fourierK4 (picked): MASE_train=0.738, RMSE_train=2.44,
+#     mean_MASE_cv=0.801, mean_RMSE_cv=2.52, ratio=1.03, gap=7.8%,
+#     p12=0.553, p24=0.137
+#   arima_fourierK6: MASE_train=0.737, RMSE_train=2.43,
+#     mean_MASE_cv=0.804, mean_RMSE_cv=2.53, ratio=1.04, gap=8.3%,
+#     p12=0.573, p24=0.122
+# K=6 has the marginally better single-holdout MASE (0.814 vs K=4's
+# 0.843) AND marginally better LB p-values, but K=4 has the lower
+# CV-based RMSE ratio (1.03 vs 1.04) and lower MASE gap (7.8% vs 8.3%)
+# - fewer parameters generalise very slightly better on the
+# authoritative CV metric, same "simpler wins on CV even when a
+# single-shot criterion looks better elsewhere" pattern as the ozone
+# project's member B (K=1 over K=2 there). Plain arima_auto (no fourier
+# at all) failed Ljung-Box outright (p=0.266 @lag12 but p=0.000632
+# @lag24) - the deterministic seasonal term is doing real work here,
+# not redundant with what auto-ARIMA finds alone.
 #
 # Diagnostics (single holdout): p=0.553 (lag12), p=0.137 (lag24) - both
-# clear 0.05 with real margin. 29-fold rolling CV: RMSE ratio = 1.03 (an
-# almost dead heat with 1.0, best of all 17 grid variants tested across
-# all 4 families), MASE gap = 7.8% - the only pick across 3 topics this
-# project attempted (ozone, trade, rain) that clears the group's
-# original 10% overfitting target outright.
+# clear 0.05 with real margin. 30-fold rolling CV: RMSE ratio = 1.03 (an
+# almost dead heat with 1.0, best of all 12 variants across 4 families
+# that passed both LB lags AND cleared the 1.3x rule - TBATS excepted,
+# see 06_ChiaZY_tbats.R), MASE gap = 7.8% - one of only 3 picks across 3
+# topics this project attempted (ozone, trade, rain) that clears the
+# group's original 10% overfitting target outright.
 
 source("scripts/00_setup.R")
 rain <- readRDS("data/rain.rds")
@@ -62,7 +72,7 @@ augment(fit) |> filter(.model == "arima_four4") |> as_tibble() |>
             n_lags_out_24 = acf_out_of_bounds(.innov, lag.max = 24))
 
 # Overfitting check (single holdout, reference only - see
-# 08_group_comparison.R for the authoritative CV-based ratio/gap)
+# 07_group_comparison.R for the authoritative CV-based ratio/gap)
 acc_train <- fit |> accuracy() |> filter(.model == "arima_four4") |>
   select(.model, MASE_train = MASE, RMSE_train = RMSE)
 acc_test <- fc |> accuracy(rain) |> filter(.model == "arima_four4") |>

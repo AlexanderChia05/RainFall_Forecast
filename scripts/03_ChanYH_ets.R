@@ -1,4 +1,4 @@
-# 04_ChanYH_ets.R - SHARED TOPIC: KL monthly mean precipitation rate
+# 03_ChanYH_ets.R - SHARED TOPIC: KL monthly mean precipitation rate
 # (mm/day), NASA POWER, 1981-2025 (540 obs). SDG 13 (Climate Action)
 # primary, SDG 11/6 extensions - see 01_data_pull.R header. Non-white-
 # noise (Ljung-Box on raw series p < 2.2e-16, both lags), weak trend
@@ -6,13 +6,16 @@
 # November - NE monsoon). Member A model family: ETS (exponential
 # smoothing / Holt-Winters).
 #
-# Model pick: ETS() auto-selection, no manual override. Verified via
-# 03_family_grid_search.R (17-variant grid across ETS/ARIMA/STL/TSLM):
-# auto-selection converges to the SAME fit as an explicit no-trend spec
-# (ets_auto == ets_notrend byte-for-byte in the grid results) - the
-# weak trend_strength (0.181) measured in 02_eda_stationarity.R means
-# ETS's own optimizer already judges a trend component isn't worth the
-# extra parameter, not a manual simplification imposed after the fact.
+# Model pick: ETS() auto-selection, no manual override. Verified via a
+# 17-variant grid across ETS/ARIMA/STL/TSLM (grid search script since
+# removed once the search phase was done, numbers held here for the
+# record): ets_auto and ets_notrend (error("A")+trend("N")+season("A"),
+# forced) landed on the SAME fit byte-for-byte - MASE_train=0.738,
+# RMSE_train=2.44, mean_MASE_cv=0.813, mean_RMSE_cv=2.55, ratio=1.05,
+# gap=9.2%, p12=0.522, p24=0.122 for both. The weak trend_strength
+# (0.181) measured in 02_eda_stationarity.R means ETS's own optimizer
+# already judges a trend component isn't worth the extra parameter,
+# not a manual simplification imposed after the fact.
 #
 # Why this family works here (unlike the ozone/trade topics): ETS has
 # no ARMA-error term or external-regressor slot, which is exactly why
@@ -71,7 +74,7 @@ augment(fit) |> filter(.model == "ets") |> as_tibble() |>
             n_lags_out_24 = acf_out_of_bounds(.innov, lag.max = 24))
 
 # Overfitting check (single holdout, reference only - see
-# 08_group_comparison.R for the authoritative CV-based ratio/gap)
+# 07_group_comparison.R for the authoritative CV-based ratio/gap)
 acc_train <- fit |> accuracy() |> filter(.model == "ets") |>
   select(.model, MASE_train = MASE, RMSE_train = RMSE)
 acc_test <- fc |> accuracy(rain) |> filter(.model == "ets") |>
