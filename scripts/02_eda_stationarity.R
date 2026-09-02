@@ -15,9 +15,6 @@ rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month"
 rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
 rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
-# STL decomposition - quick look at trend/season/remainder split
-rain |> model(STL(precip, robust = TRUE)) |> components() |> autoplot()
-
 # Stationarity + white-noise check (same convention as v1/v2 - not a
 # hard requirement per CONTEXT.md's own note, but must be checked and
 # reported honestly either way)
@@ -31,12 +28,21 @@ cat("\n== Ljung-Box on RAW series (want p < 0.05 -> not white noise) ==\n")
 print(Box.test(rain$precip, lag = 12, type = "Ljung-Box"))
 print(Box.test(rain$precip, lag = 24, type = "Ljung-Box"))
 
-# Seasonal strength (feasts::feat_stl) - quantifies how much of the
-# variance is explained by the seasonal component (0-1 scale). This
-# topic's whole selling point is "clean mechanical monsoon seasonality"
-# - verify that claim numerically, don't just eyeball the season plot.
-cat("\n== Seasonal/trend strength (feat_stl) ==\n")
-print(rain |> features(precip, feat_stl))
+# Trend detection - Mann-Kendall test (field-standard for monotonic
+# trend detection in climate/hydrology series, not an arbitrary pick)
+# PLUS the TSLM trend() coefficient's own significance (05_HamGQ_tslm.R)
+# as a second, independent check. Do NOT claim "no trend" from either -
+# both are expected to detect a real, significant trend; the finding is
+# that the trend is statistically real but small in magnitude, not
+# that it's absent. See note below for exactly how these two numbers
+# should be read together.
+cat("\n== Mann-Kendall trend test (H0: no monotonic trend) ==\n")
+print(Kendall::MannKendall(rain$precip))
+cat("tau near 0 (|tau|<0.1) = negligible trend magnitude even if p is small;\n",
+    "0.1-0.3 = weak; 0.3-0.5 = moderate; >0.5 = strong. Compare this tau\n",
+    "against 05_HamGQ_tslm.R's trend() coefficient/p-value - if BOTH agree\n",
+    "(significant p, small tau/slope), the honest conclusion is 'a real but\n",
+    "practically minor upward trend', not 'no trend'.\n")
 
 # Zero/near-zero value check - tropical KL shouldn't have true zero-
 # rain months, but confirm rather than assume (relevant for MAPE, which

@@ -6,16 +6,20 @@
 # November - NE monsoon). Member A model family: ETS (exponential
 # smoothing / Holt-Winters).
 #
-# Model pick: ETS() auto-selection, no manual override. Verified via a
+# Model pick: ETS(error("A") + trend("N") + season("A")) - trend
+# EXPLICITLY forced off, not left to auto-selection. Verified via a
 # 17-variant grid across ETS/ARIMA/STL/TSLM (grid search script since
 # removed once the search phase was done, numbers held here for the
-# record): ets_auto and ets_notrend (error("A")+trend("N")+season("A"),
-# forced) landed on the SAME fit byte-for-byte - MASE_train=0.738,
+# record): ets_auto (unconstrained) and this ets_notrend spec landed on
+# the SAME fit byte-for-byte on this data snapshot - MASE_train=0.738,
 # RMSE_train=2.44, mean_MASE_cv=0.813, mean_RMSE_cv=2.55, ratio=1.05,
-# gap=9.2%, p12=0.522, p24=0.122 for both. The weak trend_strength
-# (0.181) measured in 02_eda_stationarity.R means ETS's own optimizer
-# already judges a trend component isn't worth the extra parameter,
-# not a manual simplification imposed after the fact.
+# gap=9.2%, p12=0.522, p24=0.122 for both. Forced explicitly (rather
+# than relying on ETS() to keep re-deriving the same answer) so the
+# pick doesn't silently drift to a different structure if the series is
+# re-pulled with a few more months and auto-selection's AICc comparison
+# tips the other way - the weak trend_strength (0.181, measured in
+# 02_eda_stationarity.R) is why "no trend" was right in the first
+# place, not a manual simplification imposed after the fact.
 #
 # Why this family works here (unlike the ozone/trade topics): ETS has
 # no ARMA-error term or external-regressor slot, which is exactly why
@@ -55,7 +59,7 @@ train <- rain |> filter(month <= max(month) - h)
 
 fit <- train |> model(
   snaive = SNAIVE(precip),
-  ets    = ETS(precip)
+  ets    = ETS(precip ~ error("A") + trend("N") + season("A"))
 )
 fc <- fit |> forecast(h = h)
 fc |> accuracy(rain) |> select(.model, MASE, RMSE, MAE, MAPE) |> arrange(MASE)

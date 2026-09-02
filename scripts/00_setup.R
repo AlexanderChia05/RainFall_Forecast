@@ -1,7 +1,7 @@
 # 00_setup.R — packages. Run once per Posit Cloud session.
 # Free tier 1GB RAM. Do NOT install prophet (Stan compile fails/times out).
 
-pkgs <- c("fpp3", "tseries", "zoo", "forecast")
+pkgs <- c("fpp3", "tseries", "zoo", "forecast", "Kendall")
 new <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
 if (length(new)) install.packages(new)
 
@@ -11,14 +11,16 @@ library(tidyr)
 library(fpp3)
 library(tseries)
 
-# NOTE: forecast package is installed above (for TBATS/NNAR supplementary
-# tests, 10_tbats_nnar_grid.R) but deliberately NOT attached with
-# library() here - forecast::accuracy()/forecast() would mask
-# fabletools::accuracy()/forecast(), which every other script in this
-# project calls unqualified assuming the fabletools version. Scripts
-# that need TBATS call forecast::tbats(), forecast::forecast(),
+# NOTE: forecast package is installed above (member D / TBATS,
+# 06_ChiaZY_tbats.R and 07_group_comparison.R) but deliberately NOT
+# attached with library() here - forecast::accuracy()/forecast() would
+# mask fabletools::accuracy()/forecast(), which every other script in
+# this project calls unqualified assuming the fabletools version.
+# Scripts that need TBATS call forecast::tbats(), forecast::forecast(),
 # forecast::accuracy() explicitly instead (same convention as the ozone
-# project's BATS member).
+# project's BATS member). Kendall is installed for the Mann-Kendall
+# trend test (02_eda_stationarity.R) - small package, no masking risk,
+# called as Kendall::MannKendall() anyway for clarity.
 
 # Shared topic (all 4 members): KL monthly mean precipitation (mm/day),
 # NASA POWER (SDG 13 - see 01_data_pull.R header for full SDG writeup).

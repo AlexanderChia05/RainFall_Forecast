@@ -20,7 +20,7 @@ train <- rain |> filter(month <= max(month) - h)
 
 # The 3 fable-native models, one per member (see 03-05 headers for the
 # diagnostics/evidence behind each pick):
-#   A - ETS (auto-selected, converges to no-trend)      (03_ChanYH_ets.R)
+#   A - ETS (trend explicitly forced off, not auto)      (03_ChanYH_ets.R)
 #   B - ARIMA + Fourier(K=4), seasonal search off        (04_StephQF_arima.R)
 #   C - TSLM (trend + Fourier(K=4))                      (05_HamGQ_tslm.R)
 # Member D (TBATS, not fable-native) is fit separately below - see
@@ -28,7 +28,7 @@ train <- rain |> filter(month <= max(month) - h)
 set.seed(2026)
 fit <- train |> model(
   snaive  = SNAIVE(precip),
-  ets_A   = ETS(precip),
+  ets_A   = ETS(precip ~ error("A") + trend("N") + season("A")),
   arima_B = ARIMA(precip ~ fourier(K = 4) + pdq() + PDQ(0, 0, 0)),
   tslm_C  = TSLM(precip ~ trend() + fourier(K = 4))
 )
@@ -96,9 +96,18 @@ acc_train <- acc_train |> bind_rows(tibble(
   RMSE_train = acc_tbats_full["Training set", "RMSE"]
 ))
 
-# Rolling-origin CV (.init=360, .step=6 -> ~29 folds for the 3 fable
-# members; TBATS CV loop matches the same origins so both halves are
-# directly comparable).
+# Rolling-origin CV (.init=360, .step=6). stretch_tsibble() generates
+# windows up to n=540 inclusive (31 total, k=0..30, origin=360+6k) - but
+# only k=0..28 (origin<=528) have a FULL 12-month actual future to score
+# against. k=29 (origin=534) only has 6 of 12 real months (535-540) and
+# still produces a non-NA MASE/RMSE from that partial horizon - filtering
+# on !is.na(MASE) alone lets this partial fold sneak into the average.
+# k=30 (origin=540) has 0 real future months and correctly comes back NA.
+# Explicitly cap at n_folds_clean=29 (.id <= 29, i.e. origin<=528) so
+# every fold here has a genuine complete 12-month horizon, matching
+# TBATS's manual loop exactly (both now compare the identical 29 origins,
+# 360 through 528) - not an approximate match, an exact one.
+n_folds_clean <- length(seq(360, nrow(rain) - h, by = 6))  # 29
 origins <- seq(360, nrow(rain) - h, by = 6)
 
 set.seed(2026)
@@ -106,7 +115,7 @@ cv_fits <- rain |>
   stretch_tsibble(.init = 360, .step = 6) |>
   model(
     snaive  = SNAIVE(precip),
-    ets_A   = ETS(precip),
+    ets_A   = ETS(precip ~ error("A") + trend("N") + season("A")),
     arima_B = ARIMA(precip ~ fourier(K = 4) + pdq() + PDQ(0, 0, 0)),
     tslm_C  = TSLM(precip ~ trend() + fourier(K = 4))
   )
@@ -114,7 +123,7 @@ cv_fits <- rain |>
 cv_acc <- cv_fits |> forecast(h = 12) |> accuracy(rain, by = c(".model", ".id"))
 
 cv_summary <- cv_acc |>
-  filter(!is.na(MASE)) |>
+  filter(!is.na(MASE), .id <= n_folds_clean) |>
   group_by(member = .model) |>
   summarise(mean_MASE = mean(MASE), sd_MASE = sd(MASE),
             min_MASE = min(MASE), max_MASE = max(MASE),
