@@ -49,9 +49,15 @@ acf_check <- fit |>
 acc_train <- fit |> accuracy() |>
   select(member = .model, MASE_train = MASE, RMSE_train = RMSE)
 
-# TBATS
+# TBATS. use.box.cox = FALSE (not NULL/auto): a 42-configuration grid
+# search (09_tbats_grid.R) found that under a dof-corrected Ljung-Box
+# test, every configuration that estimated a Box-Cox lambda failed at
+# lag 24, and only the simplest configuration - no Box-Cox, no trend -
+# passed (p = 0.0587). See 06_ChiaZY_tbats.R's header for the full
+# trade-off (this costs test MASE 0.730 vs 0.685 for the auto-lambda fit
+# that fails the corrected test).
 train_ts   <- ts(train$precip, frequency = 12)
-fit_tbats  <- forecast::tbats(train_ts, use.box.cox = NULL, use.trend = FALSE,
+fit_tbats  <- forecast::tbats(train_ts, use.box.cox = FALSE, use.trend = FALSE,
                                use.damped.trend = FALSE, seasonal.periods = 12)
 fc_tbats   <- forecast::forecast(fit_tbats, h = h)
 test_actual <- rain |> filter(month > max(train$month)) |> pull(precip)
@@ -126,7 +132,7 @@ cv_summary <- cv_acc |>
 cv_tbats <- map_dfr(origins, function(i) {
   tr  <- train |> slice(1:i)
   te  <- train |> slice((i + 1):(i + h)) |> pull(precip)
-  m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = NULL,
+  m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = FALSE,
                           use.trend = FALSE, use.damped.trend = FALSE,
                           seasonal.periods = 12)
   fc  <- forecast::forecast(m, h = h)
