@@ -12,6 +12,14 @@ if (length(missing_objects) > 0L) {
 
 dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
 
+save_plot_quietly <- function(filename, plot, width = 8, height = 5, dpi = 150) {
+  suppressMessages(
+    suppressWarnings(
+      ggsave(filename, plot = plot, width = width, height = height, dpi = dpi)
+    )
+  )
+}
+
 plot_from  <- yearmonth("2013 Jan")
 test_start <- max(train$month) + 1
 test_actual_tbl <- rain |> as_tibble() |> filter(month >= test_start) |>
@@ -27,15 +35,15 @@ overlay_red_actual <- function(model_name) {
 
 p_ets <- overlay_red_actual("ets_additive") +
   labs(title = "ETS: Forecast vs Actual", y = "mm/day", x = NULL)
-ggsave("output/plots/group_summary/fc_ets.png", p_ets, width = 8, height = 5, dpi = 150)
+save_plot_quietly("output/plots/group_summary/fc_ets.png", p_ets)
 
 p_arima <- overlay_red_actual("arima_fourier") +
   labs(title = "ARIMA+Fourier(K=4): Forecast vs Actual", y = "mm/day", x = NULL)
-ggsave("output/plots/group_summary/fc_arima.png", p_arima, width = 8, height = 5, dpi = 150)
+save_plot_quietly("output/plots/group_summary/fc_arima.png", p_arima)
 
 p_tslm <- overlay_red_actual("tslm_fourier") +
   labs(title = "TSLM: Forecast vs Actual", y = "mm/day", x = NULL)
-ggsave("output/plots/group_summary/fc_tslm.png", p_tslm, width = 8, height = 5, dpi = 150)
+save_plot_quietly("output/plots/group_summary/fc_tslm.png", p_tslm)
 
 tbats_train_hist <- rain |> as_tibble() |>
   filter(month >= plot_from, month < test_start) |>
@@ -54,7 +62,7 @@ p_tbats <- ggplot() +
   geom_line(data = test_actual_tbl, aes(month, precip), color = "red", linewidth = 0.45) +
   labs(title = "TBATS: Forecast vs Actual", y = "mm/day", x = NULL) +
   theme_minimal()
-ggsave("output/plots/group_summary/fc_tbats.png", p_tbats, width = 8, height = 5, dpi = 150)
+save_plot_quietly("output/plots/group_summary/fc_tbats.png", p_tbats)
 
 combined_fc <- bind_rows(
   fc |> filter(.model != "seasonal_naive") |> as_tibble() |>
@@ -101,4 +109,4 @@ p_all <- ggplot(comparison_series, aes(month, value, color = series, linetype = 
        color = NULL, linetype = NULL) +
   theme_minimal() +
   theme(legend.position = "bottom")
-ggsave("output/plots/group_summary/fc_all_combined.png", p_all, width = 8, height = 5, dpi = 150)
+save_plot_quietly("output/plots/group_summary/fc_all_combined.png", p_all)

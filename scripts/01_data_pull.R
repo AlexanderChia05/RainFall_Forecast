@@ -38,9 +38,24 @@ rain <- rain |>
 missing_after <- sum(is.na(rain$precip))
 
 dir.create("data", showWarnings = FALSE)
-dir.create("output", showWarnings = FALSE)
+dir.create("output/tables", recursive = TRUE, showWarnings = FALSE)
 saveRDS(rain, "data/rain.rds")
+
+data_summary <- tibble(
+  variable = "PRECTOTCORR",
+  unit = "mm/day",
+  latitude = 3.1390,
+  longitude = 101.6869,
+  start_month = as.character(min(rain$month)),
+  end_month = as.character(max(rain$month)),
+  observations = nrow(rain),
+  missing_before_interpolation = missing_before,
+  missing_after_interpolation = missing_after,
+  source = "NASA POWER monthly point API"
+)
+write.csv(data_summary, "output/tables/data_summary.csv", row.names = FALSE)
 
 cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
 cat("Missing before interpolation:", missing_before,
     "| Missing after interpolation:", missing_after, "\n")
+cat("Wrote data/rain.rds and output/tables/data_summary.csv\n")

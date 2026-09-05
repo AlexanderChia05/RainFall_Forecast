@@ -1,9 +1,16 @@
 # ARIMA with Fourier terms rainfall forecast
 
 # Setup
+user_library <- Sys.getenv("R_LIBS_USER")
+if (nzchar(user_library)) {
+  dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
+  .libPaths(c(user_library, .libPaths()))
+}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
 pkgs <- c("fpp3", "tseries", "zoo", "Kendall", "patchwork")
 new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-if (length(new)) install.packages(new)
+if (length(new)) install.packages(new, lib = .libPaths()[1])
 
 library(dplyr)
 library(tidyr)
@@ -61,12 +68,12 @@ cat("Missing before interpolation:", missing_before,
     "| Missing after interpolation:", missing_after, "\n")
 
 # EDA
-rain |> autoplot(precip) +
+p_raw <- rain |> autoplot(precip) +
   labs(title = "KL monthly mean precipitation rate (mm/day)", y = "mm/day")
-rain |> gg_season(precip)    + labs(title = "Seasonal plot - monsoon cycle")
-rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
-rain |> ACF(precip,  lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
-rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
+p_season <- rain |> gg_season(precip) + labs(title = "Seasonal plot - monsoon cycle")
+p_subseries <- rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
+p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
+p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
 print(rain |> features(precip, feat_stl))
 
@@ -143,6 +150,25 @@ fit |> select(arima_four4) |> gg_tsresiduals()
 # Residual checks
 arima_coefs  <- fit |> select(arima_four4) |> tidy()
 arima_dof    <- sum(grepl("^(ar|ma)[0-9]+$", arima_coefs$term))
+arima_p      <- sum(grepl("^ar[0-9]+$", arima_coefs$term))
+arima_q      <- sum(grepl("^ma[0-9]+$", arima_coefs$term))
+
+arima_specification <- tibble(
+  model = "ARIMA with Fourier terms",
+  p = arima_p,
+  d = arima_d,
+  q = arima_q,
+  P = 0L,
+  D = 0L,
+  Q = 0L,
+  seasonal_period = 12L,
+  fourier_K = 4L,
+  ljung_box_fitdf = arima_dof
+)
+
+arima_parameters <- arima_coefs |>
+  mutate(model = "ARIMA with Fourier terms") |>
+  relocate(model)
 
 cat("\n== Ljung-Box test: ARIMA residuals ==\n")
 print(augment(fit) |> filter(.model == "arima_four4") |> features(.innov, ljung_box, lag = 12, dof = arima_dof))
@@ -191,8 +217,8 @@ results <- tibble(
 
 # Output
 dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
-write.csv(results, "output/arima_results.csv", row.names = FALSE)
-write.csv(accuracy_display, "output/arima_accuracy_train_test.csv", row.names = FALSE)
+dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
+write.csv(arima_parameters, "output/tables/model_details/arima_parameters.csv", row.names = FALSE)
 ggsave("output/plots/group_summary/arima_differenced_acf_pacf.png",
        p_arima_correlation, width = 10, height = 4.5, dpi = 150)
 
@@ -212,4 +238,4 @@ ggsave("output/plots/group_summary/fc_arima.png", p_fc, width = 8, height = 5, d
 ggsave("output/plots/group_summary/resid_arima.png",
        fit |> select(arima_four4) |> gg_tsresiduals(), width = 8, height = 6, dpi = 150)
 
-cat("\nDone. Wrote ARIMA result and train/test accuracy CSV files, plus 3 plots.\n")
+cat("\nDone. Wrote the ARIMA parameter table and 3 plots.\n")

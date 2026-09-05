@@ -1,0 +1,2 @@
+"model","box_cox_selection","lambda","ar_order","ma_order","trend","damped_trend","seasonal_period","harmonics","mase_d","mase_D","ljung_box_fitdf"
+"TBATS","automatic by AIC",0.596264292222341,0,0,FALSE,FALSE,"12","3",0,1,0

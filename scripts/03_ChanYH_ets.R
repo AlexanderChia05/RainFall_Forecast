@@ -1,9 +1,16 @@
 # ETS(A,N,A) rainfall forecast
 
 # Setup
+user_library <- Sys.getenv("R_LIBS_USER")
+if (nzchar(user_library)) {
+  dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
+  .libPaths(c(user_library, .libPaths()))
+}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
 pkgs <- c("fpp3", "tseries", "zoo", "Kendall")
 new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-if (length(new)) install.packages(new)
+if (length(new)) install.packages(new, lib = .libPaths()[1])
 
 library(dplyr)
 library(tidyr)
@@ -61,12 +68,12 @@ cat("Missing before interpolation:", missing_before,
     "| Missing after interpolation:", missing_after, "\n")
 
 # EDA
-rain |> autoplot(precip) +
+p_raw <- rain |> autoplot(precip) +
   labs(title = "KL monthly mean precipitation rate (mm/day)", y = "mm/day")
-rain |> gg_season(precip)    + labs(title = "Seasonal plot - monsoon cycle")
-rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
-rain |> ACF(precip,  lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
-rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
+p_season <- rain |> gg_season(precip) + labs(title = "Seasonal plot - monsoon cycle")
+p_subseries <- rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
+p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
+p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
 print(rain |> features(precip, feat_stl))
 
@@ -114,6 +121,13 @@ cat("\n--- ETS and Benchmark Accuracy ---\n")
 print(accuracy_display)
 fit |> select(ets) |> report()
 fit |> select(ets) |> gg_tsresiduals()
+
+# Save the fitted smoothing parameters and initial states printed by tidy().
+ets_parameters <- fit |>
+  select(ets) |>
+  tidy() |>
+  mutate(model = "ETS(A,N,A)") |>
+  relocate(model)
 
 # Residual checks
 cat("\n== Ljung-Box test: ETS residuals ==\n")
@@ -163,8 +177,8 @@ results <- tibble(
 
 # Output
 dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
-write.csv(results, "output/ets_results.csv", row.names = FALSE)
-write.csv(accuracy_display, "output/ets_accuracy_train_test.csv", row.names = FALSE)
+dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
+write.csv(ets_parameters, "output/tables/model_details/ets_parameters.csv", row.names = FALSE)
 
 # Forecast plot
 plot_from       <- yearmonth("2013 Jan")
@@ -182,4 +196,4 @@ ggsave("output/plots/group_summary/fc_ets.png", p_fc, width = 8, height = 5, dpi
 ggsave("output/plots/group_summary/resid_ets.png",
        fit |> select(ets) |> gg_tsresiduals(), width = 8, height = 6, dpi = 150)
 
-cat("\nDone. Wrote ETS result and train/test accuracy CSV files, plus 2 plots.\n")
+cat("\nDone. Wrote the ETS parameter table and 2 plots.\n")

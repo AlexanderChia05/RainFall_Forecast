@@ -20,6 +20,11 @@ acc_test <- fc |> accuracy(rain) |>
 # Residual checks
 arima_coefs <- fit |> select(arima_fourier) |> tidy()
 arima_dof   <- sum(grepl("^(ar|ma)[0-9]+$", arima_coefs$term))
+arima_p     <- sum(grepl("^ar[0-9]+$", arima_coefs$term))
+arima_q     <- sum(grepl("^ma[0-9]+$", arima_coefs$term))
+arima_d     <- train |>
+  features(precip, unitroot_ndiffs) |>
+  pull(ndiffs)
 
 lb12 <- bind_rows(
   augment(fit) |> filter(.model != "arima_fourier") |> features(.innov, ljung_box, lag = 12),
@@ -133,7 +138,6 @@ cv_summary <- cv_summary |> bind_rows(
                          min_MASE = min(MASE), max_MASE = max(MASE),
                          mean_RMSE = mean(RMSE), n_folds = n())
 ) |> arrange(mean_MASE)
-write.csv(cv_summary, "output/model_comparison_cv_summary.csv", row.names = FALSE)
 
 summary_tbl <- acc_test |>
   left_join(lb12, by = "model") |>
@@ -195,15 +199,68 @@ diagnostics_comparison <- lb12 |>
     ACF_lags_out_24 = n_lags_out_24
   )
 
+tbats_model_label <- paste0(
+  "TBATS(",
+  if (is.null(fit_tbats$lambda)) "-" else round(fit_tbats$lambda, 3),
+  ", {", length(fit_tbats$ar.coefficients), ",", length(fit_tbats$ma.coefficients), "}, ",
+  if (is.null(fit_tbats$damping.parameter)) "-" else round(fit_tbats$damping.parameter, 3),
+  ", {<", paste(fit_tbats$seasonal.periods, collapse = ","), ",",
+  paste(fit_tbats$k.vector, collapse = ","), ">})"
+)
+
+model_specifications <- tibble(
+  model = c("Seasonal naive", "ETS", "ARIMA + Fourier", "TSLM + Fourier", "TBATS"),
+  specification = c(
+    "SNAIVE with seasonal period 12",
+    "ETS(A,N,A)",
+    paste0("ARIMA(", arima_p, ",", arima_d, ",", arima_q,
+           ") errors; seasonal order (0,0,0); Fourier K=4"),
+    "Linear trend; Fourier K=4; ordinary least squares",
+    tbats_model_label
+  ),
+  seasonal_period = 12L,
+  mase_scaling = "seasonal naive at lag 12",
+  ljung_box_fitdf = c(0L, 0L, arima_dof, 0L, 0L)
+)
+
+package_versions <- tibble(
+  component = c("R", "fpp3", "fable", "forecast", "feasts", "tsibble"),
+  version = c(
+    paste(R.version$major, R.version$minor, sep = "."),
+    vapply(c("fpp3", "fable", "forecast", "feasts", "tsibble"),
+           function(pkg) as.character(packageVersion(pkg)), character(1))
+  )
+)
+
+model_results <- accuracy_comparison |>
+  mutate(data_set = recode(data_set,
+                           "Training set" = "Training",
+                           "Test set" = "Test")) |>
+  pivot_wider(
+    names_from = data_set,
+    values_from = c(RMSE, MAE, MAPE, MASE),
+    names_glue = "{data_set}_{.value}"
+  ) |>
+  left_join(cv_comparison, by = "model") |>
+  left_join(diagnostics_comparison, by = "model") |>
+  select(
+    model,
+    Training_RMSE, Training_MAE, Training_MAPE, Training_MASE,
+    Test_RMSE, Test_MAE, Test_MAPE, Test_MASE,
+    CV_RMSE, CV_MASE, SD_MASE, folds,
+    LB_pvalue_12, LB_pvalue_24, ACF_lags_out_12, ACF_lags_out_24
+  )
+
 cat("\n--- Training and Test Accuracy ---\n")
 print(accuracy_comparison)
 cat("\n--- Rolling-origin Cross-validation ---\n")
 print(cv_comparison)
 cat("\n--- Residual Diagnostics ---\n")
 print(diagnostics_comparison)
+cat("\n--- Model Specifications ---\n")
+print(model_specifications)
 
-dir.create("output", showWarnings = FALSE)
-write.csv(summary_tbl, "output/model_comparison_summary.csv", row.names = FALSE)
-write.csv(accuracy_comparison, "output/model_accuracy_train_test.csv", row.names = FALSE)
-write.csv(cv_comparison, "output/model_cv_comparison.csv", row.names = FALSE)
-write.csv(diagnostics_comparison, "output/model_diagnostics.csv", row.names = FALSE)
+dir.create("output/tables", recursive = TRUE, showWarnings = FALSE)
+write.csv(model_results, "output/tables/model_results.csv", row.names = FALSE)
+write.csv(model_specifications, "output/tables/model_specifications.csv", row.names = FALSE)
+write.csv(package_versions, "output/tables/package_versions.csv", row.names = FALSE)

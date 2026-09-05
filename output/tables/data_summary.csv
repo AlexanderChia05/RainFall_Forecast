@@ -1,0 +1,2 @@
+"variable","unit","latitude","longitude","start_month","end_month","observations","missing_before_interpolation","missing_after_interpolation","source"
+"PRECTOTCORR","mm/day",3.139,101.6869,"1981 Jan","2025 Dec",540,0,0,"NASA POWER monthly point API"

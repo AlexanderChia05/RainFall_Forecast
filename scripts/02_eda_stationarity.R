@@ -39,10 +39,21 @@ p_split <- ggplot(split_data, aes(month, precip, color = data_set)) +
   theme(legend.position = "bottom")
 ggsave("output/plots/eda/train_test_split.png", p_split, width = 8, height = 5, dpi = 150)
 
-rain |> gg_season(precip) + labs(title = "Seasonal plot - by year")
-rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
-rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
-rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
+p_season <- rain |> gg_season(precip) +
+  labs(title = "Seasonal plot - by year", y = "mm/day")
+ggsave("output/plots/eda/seasonal_plot.png", p_season, width = 8, height = 5, dpi = 150)
+
+p_subseries <- rain |> gg_subseries(precip) +
+  labs(title = "Subseries plot - by calendar month", y = "mm/day")
+ggsave("output/plots/eda/subseries_plot.png", p_subseries, width = 8, height = 5, dpi = 150)
+
+p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() +
+  labs(title = "ACF - raw series")
+ggsave("output/plots/eda/acf_raw_series.png", p_acf, width = 8, height = 5, dpi = 150)
+
+p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() +
+  labs(title = "PACF - raw series")
+ggsave("output/plots/eda/pacf_raw_series.png", p_pacf, width = 8, height = 5, dpi = 150)
 
 # Statistical tests
 cat("\n== ADF test ==\n")
