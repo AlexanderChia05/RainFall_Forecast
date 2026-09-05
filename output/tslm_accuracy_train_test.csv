@@ -1,0 +1,5 @@
+"model","data_set","RMSE","MAE","MAPE","MASE"
+"Seasonal naive","Training set",3.319,2.574,53.406,1
+"Seasonal naive","Test set",2.694,2.424,43.173,0.942
+"TSLM + Fourier","Training set",2.417,1.895,42.44,0.736
+"TSLM + Fourier","Test set",2.407,2.146,38.234,0.833
