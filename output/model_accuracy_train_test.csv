@@ -1,0 +1,11 @@
+"model","data_set","RMSE","MAE","MAPE","MASE"
+"ARIMA + Fourier","Training set",2.438,1.901,41.193,0.738
+"ARIMA + Fourier","Test set",2.424,2.17,39.412,0.843
+"ETS","Training set",2.436,1.9,41.325,0.738
+"ETS","Test set",2.363,2.077,37.29,0.807
+"Seasonal naive","Training set",3.319,2.574,53.406,1
+"Seasonal naive","Test set",2.694,2.424,43.173,0.942
+"TBATS","Training set",2.449,1.878,38.844,0.73
+"TBATS","Test set",2.335,1.984,35.702,0.771
+"TSLM + Fourier","Training set",2.417,1.895,42.44,0.736
+"TSLM + Fourier","Test set",2.407,2.146,38.234,0.833

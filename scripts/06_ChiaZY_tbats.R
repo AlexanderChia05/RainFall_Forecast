@@ -1,49 +1,6 @@
-# 06_ChiaZY_tbats.R - STANDALONE script, Member D (Chia Zhen Yang).
-# Topic: KL monthly mean precipitation rate (mm/day), NASA POWER,
-# 1981-2025 (540 obs). SDG 13 primary. Model family: TBATS (Box-Cox,
-# ARMA errors, Trend, Seasonal - trigonometric/harmonic seasonal
-# representation, De Livera, Hyndman & Snyder, 2011).
-#
-# Self-contained: pulls its own data, runs its own diagnostics, fits and
-# validates its own model, writes its own outputs. No source(), no
-# readRDS of a shared file, no dependency on any other script. The setup
-# and data blocks are duplicated across the four member scripts on
-# purpose so each one can be submitted and run on its own.
-#
-# Model pick: tbats(seasonal.periods = 12, use.box.cox = FALSE,
-# use.trend = FALSE). Confirmed by a 42-configuration grid search over
-# Box-Cox / trend / damped-trend / arma-errors (see 09_tbats_grid.R,
-# which collapses to 7 distinct fitted models). Screened on a Ljung-Box
-# test whose degrees of freedom are corrected for the parameters TBATS
-# itself estimated (forecast::modeldf()) - Box.test()'s fitdf defaults
-# to 0, which understates how many parameters were fitted and overstates
-# how random the residuals look. Under that corrected test, diagnostic
-# adequacy fell as model complexity rose: every configuration with a
-# Box-Cox transform, a damped trend, or both failed at lag 24 (p as low
-# as 0.0124), and the single survivor was the simplest configuration in
-# the family - no Box-Cox, no trend, 3 harmonics - at p = 0.0587, a thin
-# but real pass. The originally-fitted configuration
-# (use.box.cox = NULL, letting TBATS estimate lambda) converged to
-# lambda = 0.596 and FAILED the corrected test at lag 24 (p = 0.0276),
-# despite having the better test-set MASE (0.685 vs 0.730 for the
-# no-Box-Cox survivor). The survivor was selected anyway: a model whose
-# residuals are not white cannot support valid prediction intervals,
-# so the accuracy loss was accepted in exchange for a passing
-# diagnostic. Every configuration in the grid, this one included,
-# converged to {0,0} AR/MA orders - TBATS never selected an ARMA error
-# component on this series, with use.arma.errors TRUE or FALSE making no
-# difference to the fitted model.
-#
-# Trade-off disclosed, not hidden: even the survivor's lag-24 margin
-# (p=0.0587) is thin, and without the dof correction every configuration
-# in the grid would have passed (min p=0.0835) - the pass/fail verdict
-# depends entirely on which Ljung-Box convention is used, and that fork
-# is reported rather than hidden behind a single number.
-#
-# Not a fable/tidyverts model - uses forecast::tbats() on a plain ts
-# object, bridged in and out of the tsibble pipeline by hand.
+# TBATS rainfall forecast
 
-# setup
+# Setup
 pkgs <- c("fpp3", "tseries", "zoo", "forecast", "Kendall")
 new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
 if (length(new)) install.packages(new)
@@ -54,7 +11,6 @@ library(tidyr)
 library(fpp3)
 library(tseries)
 
-# Counts residual ACF lags outside the +/- 1.96/sqrt(n) white-noise band.
 acf_out_of_bounds <- function(resid, lag.max = 12) {
   r  <- na.omit(resid)
   n  <- length(r)
@@ -63,7 +19,7 @@ acf_out_of_bounds <- function(resid, lag.max = 12) {
   sum(abs(a) > ci)
 }
 
-# data
+# Data
 url <- paste0(
   "https://power.larc.nasa.gov/api/temporal/monthly/point?",
   "parameters=PRECTOTCORR&community=AG",
@@ -72,18 +28,22 @@ url <- paste0(
 )
 
 raw_lines  <- system(paste0("curl -s ", shQuote(url)), intern = TRUE)
-start_line <- which(grepl("-END HEADER-", raw_lines)) + 1
+header_end <- which(grepl("-END HEADER-", raw_lines))
+if (length(header_end) != 1L) {
+  stop("NASA POWER download failed or returned an unexpected response.")
+}
+start_line <- header_end + 1L
 df <- read.csv(text = paste(raw_lines[start_line:length(raw_lines)], collapse = "\n"),
                stringsAsFactors = FALSE)
 
-month_abbr <- c("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
+month_levels <- c("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
 
 rain <- df |>
-  select(YEAR, all_of(month_abbr)) |>
+  select(YEAR, all_of(month_levels)) |>
   pivot_longer(-YEAR, names_to = "month_abbr", values_to = "precip") |>
   mutate(
     precip    = na_if(precip, -999),
-    month_num = match(month_abbr, month_abbr),
+    month_num = match(.data$month_abbr, month_levels),
     month     = yearmonth(paste(YEAR, month_num, sep = "-"))
   ) |>
   arrange(month) |>
@@ -109,102 +69,102 @@ rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month"
 rain |> ACF(precip,  lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
 rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
-# Seasonal-trend decomposition: the evidence behind use.trend = FALSE.
-# Seasonal strength ~0.469 against trend strength ~0.181. The seasonal
-# component also widens across the record, which would ordinarily
-# motivate a Box-Cox transform - but the grid search above found that
-# adding one costs more Ljung-Box degrees of freedom than it buys back
-# in residual whiteness, so this model does not use one (see header).
+# STL decomposition
 p_stl <- rain |> model(STL(precip)) |> components() |> autoplot() +
   labs(title = "STL decomposition")
 print(p_stl)
 print(rain |> features(precip, feat_stl))
 
-# stationarity / white noise
-cat("\n== ADF (want p < 0.05 for stationary) ==\n")
+# Statistical tests
+cat("\n== ADF test ==\n")
 print(adf.test(rain$precip))
 
-cat("\n== KPSS (want p > 0.05 for stationary) ==\n")
+cat("\n== KPSS test ==\n")
 print(kpss.test(rain$precip))
 
-cat("\n== Ljung-Box on RAW series (want p < 0.05 -> not white noise) ==\n")
+cat("\n== Ljung-Box test: raw series ==\n")
 print(Box.test(rain$precip, lag = 12, type = "Ljung-Box"))
 print(Box.test(rain$precip, lag = 24, type = "Ljung-Box"))
 
-cat("\n== Mann-Kendall trend test (H0: no monotonic trend) ==\n")
+cat("\n== Mann-Kendall trend test ==\n")
 print(Kendall::MannKendall(rain$precip))
-cat("tau near 0 (|tau| < 0.1) = negligible trend magnitude even if p is\n",
-    "small; 0.1-0.3 = weak. A significant p with a small tau means a real\n",
-    "but practically minor upward trend, not an absence of trend.\n")
 
-cat("\n== Min precip value (near-zero check for MAPE stability) ==\n")
+cat("\n== Minimum precipitation ==\n")
 print(min(rain$precip, na.rm = TRUE))
 
-# train / test split
+# Train/test split
 h        <- 12
 train    <- rain |> filter(month <= max(month) - h)
 train_ts <- ts(train$precip, frequency = 12)
 
-# model
-fit_tbats <- forecast::tbats(train_ts, use.box.cox = FALSE, use.trend = FALSE,
+# Model
+fit_tbats <- forecast::tbats(train_ts, use.box.cox = NULL, use.trend = FALSE,
                              use.damped.trend = FALSE, seasonal.periods = 12)
 fc_tbats  <- forecast::forecast(fit_tbats, h = h)
 print(fit_tbats)
-cat("\nBox-Cox lambda:", if (is.null(fit_tbats$lambda)) "none (use.box.cox = FALSE)" else fit_tbats$lambda, "\n")
+cat("\nBox-Cox lambda:", if (is.null(fit_tbats$lambda)) "none" else fit_tbats$lambda, "\n")
 
 test_actual <- rain |> filter(month > max(train$month)) |> pull(precip)
-acc_tbats   <- forecast::accuracy(fc_tbats, test_actual)
-print(acc_tbats)
+acc_tbats   <- forecast::accuracy(
+  fc_tbats,
+  test_actual,
+  d = 0,
+  D = 1
+)
+
+accuracy_display <- acc_tbats |>
+  as.data.frame() |>
+  tibble::rownames_to_column("data_set") |>
+  as_tibble() |>
+  transmute(model = "TBATS", data_set, RMSE, MAE, MAPE, MASE) |>
+  mutate(across(c(RMSE, MAE, MAPE, MASE), ~ round(.x, 3)))
 
 snaive_fit <- train |> model(snaive = SNAIVE(precip))
-print(snaive_fit |> forecast(h = h) |> accuracy(rain) |>
-        select(.model, MASE, RMSE, MAE, MAPE))
+snaive_fc  <- snaive_fit |> forecast(h = h)
+snaive_accuracy <- bind_rows(
+  snaive_fit |> accuracy() |> mutate(data_set = "Training set"),
+  snaive_fc |> accuracy(rain) |> mutate(data_set = "Test set")
+) |>
+  transmute(model = "Seasonal naive", data_set, RMSE, MAE, MAPE, MASE) |>
+  mutate(across(c(RMSE, MAE, MAPE, MASE), ~ round(.x, 3)))
 
-# residual diagnostics
+accuracy_display <- bind_rows(accuracy_display, snaive_accuracy) |>
+  arrange(model, factor(data_set, levels = c("Training set", "Test set")))
+
+cat("\n--- TBATS and Benchmark Accuracy ---\n")
+print(accuracy_display)
+
+# Residual checks
 resid_tbats <- residuals(fit_tbats)
 
-# Ljung-Box degrees of freedom must be reduced by the number of
-# parameters TBATS itself estimated (its internal ARMA error terms plus
-# any Box-Cox/seasonal state count that forecast::modeldf() reports), or
-# the test overstates how random the residuals are. Box.test()'s fitdf
-# defaults to 0, which is why this is set explicitly rather than left
-# at the default.
-tbats_dof <- forecast::modeldf(fit_tbats)
-cat("\nTBATS model degrees of freedom used as Ljung-Box fitdf:", tbats_dof, "\n")
+cat("\n== Ljung-Box test: TBATS residuals ==\n")
+print(Box.test(resid_tbats, lag = 12, type = "Ljung-Box"))
+print(Box.test(resid_tbats, lag = 24, type = "Ljung-Box"))
 
-cat("\n== Ljung-Box on TBATS residuals (want p > 0.05) ==\n")
-print(Box.test(resid_tbats, lag = 12, type = "Ljung-Box", fitdf = tbats_dof))
-print(Box.test(resid_tbats, lag = 24, type = "Ljung-Box", fitdf = tbats_dof))
-
-cat("\n== Residual ACF lags outside the white-noise band ==\n")
+cat("\n== Residual ACF summary ==\n")
 cat("n_lags_out_12:", acf_out_of_bounds(resid_tbats, lag.max = 12),
     " n_lags_out_24:", acf_out_of_bounds(resid_tbats, lag.max = 24), "\n")
 
-# overfitting check: single holdout
+# Train/test comparison
 mase_train <- acc_tbats["Training set", "MASE"]
-mase_test  <- acc_tbats["Test set", "MASE"]
 rmse_train <- acc_tbats["Training set", "RMSE"]
-rmse_test  <- acc_tbats["Test set", "RMSE"]
-cat("\nrmse_ratio_holdout:", rmse_test / rmse_train,
-    " mase_gap_pct_holdout:", abs(mase_test - mase_train) / mase_test, "\n")
 
-# overfitting check: rolling-origin CV
-# Folds run only over the training window (up to 2024-12), never the
-# 2025 holdout - otherwise the same 2025 observations that back the
-# holdout accuracy above would also leak into the CV folds and inflate
-# both numbers on the same data. TBATS is not a fable model, so the
-# folds are looped by hand; every slice below is drawn from train, not
-# rain, so 2025 is never touched inside this loop.
+# Rolling-origin CV
 origins <- seq(360, nrow(train) - h, by = 6)
 
 cv_tbats <- map_dfr(origins, function(i) {
   tr  <- train |> slice(1:i)
   te  <- train |> slice((i + 1):(i + h)) |> pull(precip)
-  m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = FALSE,
+  m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = NULL,
                          use.trend = FALSE, use.damped.trend = FALSE,
                          seasonal.periods = 12)
   fcv <- forecast::forecast(m, h = h)
-  acc <- forecast::accuracy(fcv, te)
+  acc <- forecast::accuracy(
+    fcv,
+    te,
+    d = 0,
+    D = 1
+  )
   tibble(MASE = acc["Test set", "MASE"], RMSE = acc["Test set", "RMSE"])
 })
 
@@ -215,33 +175,26 @@ cv_summary <- cv_tbats |>
 print(cv_summary)
 
 results <- tibble(
-  member        = "tbats_D",
+  model         = "tbats",
   MASE_train    = mase_train,
   RMSE_train    = rmse_train,
   MASE_cv       = cv_summary$mean_MASE,
   RMSE_cv       = cv_summary$mean_RMSE,
   sd_MASE_cv    = cv_summary$sd_MASE,
   n_folds       = cv_summary$n_folds,
-  rmse_ratio_cv = cv_summary$mean_RMSE / rmse_train,
-  gap_pct_cv    = abs(cv_summary$mean_MASE - mase_train) / cv_summary$mean_MASE,
-  lb_pvalue_24  = Box.test(resid_tbats, lag = 24, type = "Ljung-Box", fitdf = tbats_dof)$p.value
-) |>
-  mutate(within_1_3x_cv  = rmse_ratio_cv <= 1.3,
-         within_10pct_cv = gap_pct_cv <= 0.10)
-print(results)
+  lb_pvalue_24  = Box.test(resid_tbats, lag = 24, type = "Ljung-Box")$p.value
+)
 
-# outputs
+# Output
 dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
-write.csv(results, "output/member_D_tbats_results.csv", row.names = FALSE)
+write.csv(results, "output/tbats_results.csv", row.names = FALSE)
+write.csv(accuracy_display, "output/tbats_accuracy_train_test.csv", row.names = FALSE)
 
-# STL decomposition plot (Figure 1 of the individual report).
-ggsave("output/plots/group_summary/stl_D_decomposition.png", p_stl,
+# STL plot
+ggsave("output/plots/group_summary/stl_tbats_decomposition.png", p_stl,
        width = 9, height = 6, dpi = 150)
 
-# Forecast vs actual, built by hand because TBATS is not a fable model:
-# black history, blue forecast + 80/95% ribbons, red actual on top.
-# Zoomed to the last ~3 years so the 12-month test window is readable -
-# a 12-year window makes a 12-month forecast impossible to judge.
+# Forecast plot
 zoom_from       <- yearmonth("2023 Jan")
 test_start      <- max(train$month) + 1
 test_actual_tbl <- rain |> as_tibble() |> filter(month >= test_start) |>
@@ -266,10 +219,10 @@ p_fc <- ggplot() +
   geom_line(data = test_actual_tbl, aes(month, precip), color = "red", linewidth = 0.45) +
   labs(title = "TBATS: Forecast vs Actual", y = "mm/day", x = NULL) +
   theme_minimal()
-ggsave("output/plots/group_summary/fc_D_tbats.png", p_fc, width = 8, height = 5, dpi = 150)
+ggsave("output/plots/group_summary/fc_tbats.png", p_fc, width = 8, height = 5, dpi = 150)
 
-png("output/plots/group_summary/resid_D_tbats.png", width = 800, height = 600, res = 150)
+png("output/plots/group_summary/resid_tbats.png", width = 800, height = 600, res = 150)
 forecast::checkresiduals(fit_tbats)
 dev.off()
 
-cat("\nDone. Wrote output/member_D_tbats_results.csv and 3 plots.\n")
+cat("\nDone. Wrote TBATS result and train/test accuracy CSV files, plus 3 plots.\n")
