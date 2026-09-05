@@ -10,26 +10,38 @@
 # and data blocks are duplicated across the four member scripts on
 # purpose so each one can be submitted and run on its own.
 #
-# Model pick: tbats(seasonal.periods = 12, use.trend = FALSE). The trend
-# state is disabled because the STL trend strength measured below is
-# only 0.181 against a seasonal strength of 0.469, so the data does not
-# support a trend component. An earlier grid search across 4 TBATS
-# configurations (auto, boxcox, trend+damped, no-trend) found no-trend
-# had the best CV ratio and gap of the four, consistent with this same
-# conclusion, but that grid-search script no longer exists in this
-# repository, so it is not re-claimed here as reproducible evidence -
-# only the STL-based reasoning above is asserted as verifiable from this
-# script alone.
+# Model pick: tbats(seasonal.periods = 12, use.box.cox = FALSE,
+# use.trend = FALSE). Confirmed by a 42-configuration grid search over
+# Box-Cox / trend / damped-trend / arma-errors (see 09_tbats_grid.R,
+# which collapses to 7 distinct fitted models). Screened on a Ljung-Box
+# test whose degrees of freedom are corrected for the parameters TBATS
+# itself estimated (forecast::modeldf()) - Box.test()'s fitdf defaults
+# to 0, which understates how many parameters were fitted and overstates
+# how random the residuals look. Under that corrected test, diagnostic
+# adequacy fell as model complexity rose: every configuration with a
+# Box-Cox transform, a damped trend, or both failed at lag 24 (p as low
+# as 0.0124), and the single survivor was the simplest configuration in
+# the family - no Box-Cox, no trend, 3 harmonics - at p = 0.0587, a thin
+# but real pass. The originally-fitted configuration
+# (use.box.cox = NULL, letting TBATS estimate lambda) converged to
+# lambda = 0.596 and FAILED the corrected test at lag 24 (p = 0.0276),
+# despite having the better test-set MASE (0.685 vs 0.730 for the
+# no-Box-Cox survivor). The survivor was selected anyway: a model whose
+# residuals are not white cannot support valid prediction intervals,
+# so the accuracy loss was accepted in exchange for a passing
+# diagnostic. Every configuration in the grid, this one included,
+# converged to {0,0} AR/MA orders - TBATS never selected an ARMA error
+# component on this series, with use.arma.errors TRUE or FALSE making no
+# difference to the fitted model.
 #
-# Trade-off disclosed, not hidden: the Ljung-Box lag=24 margin
-# (p=0.0886) is thinner than the other members. It clears 0.05 but with
-# less room, traded against a much better overfitting profile.
+# Trade-off disclosed, not hidden: even the survivor's lag-24 margin
+# (p=0.0587) is thin, and without the dof correction every configuration
+# in the grid would have passed (min p=0.0835) - the pass/fail verdict
+# depends entirely on which Ljung-Box convention is used, and that fork
+# is reported rather than hidden behind a single number.
 #
 # Not a fable/tidyverts model - uses forecast::tbats() on a plain ts
-# object, bridged in and out of the tsibble pipeline by hand. The Box-Cox
-# transform is applied and reversed INSIDE the forecast package, so
-# forecasts, fitted values and residuals all come back on the original
-# mm/day scale and no manual back-transform is needed.
+# object, bridged in and out of the tsibble pipeline by hand.
 
 # setup
 pkgs <- c("fpp3", "tseries", "zoo", "forecast", "Kendall")
@@ -98,9 +110,11 @@ rain |> ACF(precip,  lag_max = 36) |> autoplot() + labs(title = "ACF - raw serie
 rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
 # Seasonal-trend decomposition: the evidence behind use.trend = FALSE.
-# Seasonal strength ~0.469 against trend strength ~0.181, and the
-# seasonal component widens across the record, which is what motivates
-# letting TBATS estimate a Box-Cox transform.
+# Seasonal strength ~0.469 against trend strength ~0.181. The seasonal
+# component also widens across the record, which would ordinarily
+# motivate a Box-Cox transform - but the grid search above found that
+# adding one costs more Ljung-Box degrees of freedom than it buys back
+# in residual whiteness, so this model does not use one (see header).
 p_stl <- rain |> model(STL(precip)) |> components() |> autoplot() +
   labs(title = "STL decomposition")
 print(p_stl)
@@ -132,11 +146,11 @@ train    <- rain |> filter(month <= max(month) - h)
 train_ts <- ts(train$precip, frequency = 12)
 
 # model
-fit_tbats <- forecast::tbats(train_ts, use.box.cox = NULL, use.trend = FALSE,
+fit_tbats <- forecast::tbats(train_ts, use.box.cox = FALSE, use.trend = FALSE,
                              use.damped.trend = FALSE, seasonal.periods = 12)
 fc_tbats  <- forecast::forecast(fit_tbats, h = h)
 print(fit_tbats)
-cat("\nFitted Box-Cox lambda:", fit_tbats$lambda, "\n")
+cat("\nBox-Cox lambda:", if (is.null(fit_tbats$lambda)) "none (use.box.cox = FALSE)" else fit_tbats$lambda, "\n")
 
 test_actual <- rain |> filter(month > max(train$month)) |> pull(precip)
 acc_tbats   <- forecast::accuracy(fc_tbats, test_actual)
@@ -186,7 +200,7 @@ origins <- seq(360, nrow(train) - h, by = 6)
 cv_tbats <- map_dfr(origins, function(i) {
   tr  <- train |> slice(1:i)
   te  <- train |> slice((i + 1):(i + h)) |> pull(precip)
-  m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = NULL,
+  m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = FALSE,
                          use.trend = FALSE, use.damped.trend = FALSE,
                          seasonal.periods = 12)
   fcv <- forecast::forecast(m, h = h)
