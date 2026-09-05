@@ -10,16 +10,16 @@
 # and data blocks are duplicated across the four member scripts on
 # purpose so each one can be submitted and run on its own.
 #
-# Model pick: tbats(seasonal.periods = 12, use.trend = FALSE). Verified
-# via a 4-variant grid search (grid script since removed, evidence kept
-# here):
-#   tbats_notrend      : ratio=1.01, gap=5.7%, p24=0.0886   <- picked
-#   tbats_auto         : ratio=1.01, gap=6.4%, p24=0.0994
-#   tbats_boxcox       : ratio=1.02, gap=6.7%, p24=0.0994
-#   tbats_trend_damped : ratio=1.03, gap=7.5%, p24=0.0835
-# tbats_notrend has the best ratio AND the lowest gap% of the four,
-# matching the weak STL trend strength of 0.181 measured below: forcing
-# the trend off beats letting the AIC-based auto-selection decide.
+# Model pick: tbats(seasonal.periods = 12, use.trend = FALSE). The trend
+# state is disabled because the STL trend strength measured below is
+# only 0.181 against a seasonal strength of 0.469, so the data does not
+# support a trend component. An earlier grid search across 4 TBATS
+# configurations (auto, boxcox, trend+damped, no-trend) found no-trend
+# had the best CV ratio and gap of the four, consistent with this same
+# conclusion, but that grid-search script no longer exists in this
+# repository, so it is not re-claimed here as reproducible evidence -
+# only the STL-based reasoning above is asserted as verifiable from this
+# script alone.
 #
 # Trade-off disclosed, not hidden: the Ljung-Box lag=24 margin
 # (p=0.0886) is thinner than the other members. It clears 0.05 but with
@@ -75,12 +75,19 @@ rain <- df |>
     month     = yearmonth(paste(YEAR, month_num, sep = "-"))
   ) |>
   arrange(month) |>
-  as_tsibble(index = month) |>
+  as_tsibble(index = month)
+
+missing_before <- sum(is.na(rain$precip))
+
+rain <- rain |>
   mutate(precip = zoo::na.approx(precip, na.rm = FALSE)) |>
   select(month, precip)
 
-cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)),
-    "| NAs remaining:", sum(is.na(rain$precip)), "\n")
+missing_after <- sum(is.na(rain$precip))
+
+cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
+cat("Missing before interpolation:", missing_before,
+    "| Missing after interpolation:", missing_after, "\n")
 
 # EDA
 rain |> autoplot(precip) +
@@ -142,9 +149,18 @@ print(snaive_fit |> forecast(h = h) |> accuracy(rain) |>
 # residual diagnostics
 resid_tbats <- residuals(fit_tbats)
 
+# Ljung-Box degrees of freedom must be reduced by the number of
+# parameters TBATS itself estimated (its internal ARMA error terms plus
+# any Box-Cox/seasonal state count that forecast::modeldf() reports), or
+# the test overstates how random the residuals are. Box.test()'s fitdf
+# defaults to 0, which is why this is set explicitly rather than left
+# at the default.
+tbats_dof <- forecast::modeldf(fit_tbats)
+cat("\nTBATS model degrees of freedom used as Ljung-Box fitdf:", tbats_dof, "\n")
+
 cat("\n== Ljung-Box on TBATS residuals (want p > 0.05) ==\n")
-print(Box.test(resid_tbats, lag = 12, type = "Ljung-Box"))
-print(Box.test(resid_tbats, lag = 24, type = "Ljung-Box"))
+print(Box.test(resid_tbats, lag = 12, type = "Ljung-Box", fitdf = tbats_dof))
+print(Box.test(resid_tbats, lag = 24, type = "Ljung-Box", fitdf = tbats_dof))
 
 cat("\n== Residual ACF lags outside the white-noise band ==\n")
 cat("n_lags_out_12:", acf_out_of_bounds(resid_tbats, lag.max = 12),
@@ -159,11 +175,17 @@ cat("\nrmse_ratio_holdout:", rmse_test / rmse_train,
     " mase_gap_pct_holdout:", abs(mase_test - mase_train) / mase_test, "\n")
 
 # overfitting check: rolling-origin CV
-origins <- seq(360, nrow(rain) - h, by = 6)
+# Folds run only over the training window (up to 2024-12), never the
+# 2025 holdout - otherwise the same 2025 observations that back the
+# holdout accuracy above would also leak into the CV folds and inflate
+# both numbers on the same data. TBATS is not a fable model, so the
+# folds are looped by hand; every slice below is drawn from train, not
+# rain, so 2025 is never touched inside this loop.
+origins <- seq(360, nrow(train) - h, by = 6)
 
 cv_tbats <- map_dfr(origins, function(i) {
-  tr  <- rain |> slice(1:i)
-  te  <- rain |> slice((i + 1):(i + h)) |> pull(precip)
+  tr  <- train |> slice(1:i)
+  te  <- train |> slice((i + 1):(i + h)) |> pull(precip)
   m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = NULL,
                          use.trend = FALSE, use.damped.trend = FALSE,
                          seasonal.periods = 12)
@@ -188,7 +210,7 @@ results <- tibble(
   n_folds       = cv_summary$n_folds,
   rmse_ratio_cv = cv_summary$mean_RMSE / rmse_train,
   gap_pct_cv    = abs(cv_summary$mean_MASE - mase_train) / cv_summary$mean_MASE,
-  lb_pvalue_24  = Box.test(resid_tbats, lag = 24, type = "Ljung-Box")$p.value
+  lb_pvalue_24  = Box.test(resid_tbats, lag = 24, type = "Ljung-Box", fitdf = tbats_dof)$p.value
 ) |>
   mutate(within_1_3x_cv  = rmse_ratio_cv <= 1.3,
          within_10pct_cv = gap_pct_cv <= 0.10)

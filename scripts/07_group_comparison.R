@@ -17,10 +17,26 @@ fc <- fit |> forecast(h = h)
 acc_test <- fc |> accuracy(rain) |>
   select(member = .model, MASE, RMSE, MAE, MAPE)
 
-lb12 <- augment(fit) |> features(.innov, ljung_box, lag = 12) |>
-  rename(member = .model, lb_stat_12 = lb_stat, lb_pvalue_12 = lb_pvalue)
-lb24 <- augment(fit) |> features(.innov, ljung_box, lag = 24) |>
-  rename(member = .model, lb_stat_24 = lb_stat, lb_pvalue_24 = lb_pvalue)
+# ARIMA's Ljung-Box degrees of freedom must be reduced by the number of
+# AR/MA parameters it estimated, or the test overstates residual
+# randomness. Counted from the fitted coefficient names rather than
+# assumed - PDQ(0,0,0) means no seasonal ar/ma term to also count, and
+# the Fourier regressor coefficients are named after the regressor, not
+# ar/ma, so this pattern only ever matches genuine ARMA error terms.
+# ETS and TSLM keep the default dof = 0 as basic residual screening.
+arima_coefs <- fit |> select(arima_B) |> tidy()
+arima_dof   <- sum(grepl("^(ar|ma)[0-9]+$", arima_coefs$term))
+cat("ARIMA AR/MA parameter count used as Ljung-Box dof:", arima_dof, "\n")
+
+lb12 <- bind_rows(
+  augment(fit) |> filter(.model != "arima_B") |> features(.innov, ljung_box, lag = 12),
+  augment(fit) |> filter(.model == "arima_B") |> features(.innov, ljung_box, lag = 12, dof = arima_dof)
+) |> rename(member = .model, lb_stat_12 = lb_stat, lb_pvalue_12 = lb_pvalue)
+
+lb24 <- bind_rows(
+  augment(fit) |> filter(.model != "arima_B") |> features(.innov, ljung_box, lag = 24),
+  augment(fit) |> filter(.model == "arima_B") |> features(.innov, ljung_box, lag = 24, dof = arima_dof)
+) |> rename(member = .model, lb_stat_24 = lb_stat, lb_pvalue_24 = lb_pvalue)
 
 acf_check <- fit |>
   augment() |>
@@ -41,8 +57,14 @@ fc_tbats   <- forecast::forecast(fit_tbats, h = h)
 test_actual <- rain |> filter(month > max(train$month)) |> pull(precip)
 acc_tbats_full <- forecast::accuracy(fc_tbats, test_actual)
 resid_tbats <- residuals(fit_tbats)
-lb_tbats12  <- Box.test(resid_tbats, lag = 12, type = "Ljung-Box")
-lb_tbats24  <- Box.test(resid_tbats, lag = 24, type = "Ljung-Box")
+
+# TBATS's Ljung-Box fitdf must likewise account for the parameters it
+# estimated internally (Box-Cox, ARMA errors, seasonal states);
+# Box.test()'s fitdf defaults to 0, so it is set explicitly here.
+tbats_dof   <- forecast::modeldf(fit_tbats)
+cat("TBATS model degrees of freedom used as Ljung-Box fitdf:", tbats_dof, "\n")
+lb_tbats12  <- Box.test(resid_tbats, lag = 12, type = "Ljung-Box", fitdf = tbats_dof)
+lb_tbats24  <- Box.test(resid_tbats, lag = 24, type = "Ljung-Box", fitdf = tbats_dof)
 
 acc_test <- acc_test |> bind_rows(tibble(
   member = "tbats_D",
@@ -73,12 +95,15 @@ acc_train <- acc_train |> bind_rows(tibble(
   RMSE_train = acc_tbats_full["Training set", "RMSE"]
 ))
 
-# Rolling-origin CV (.init=360, .step=6)
-n_folds_clean <- length(seq(360, nrow(rain) - h, by = 6)) 
-origins <- seq(360, nrow(rain) - h, by = 6)
+# Rolling-origin CV (.init=360, .step=6). Folds run only over the
+# training window (up to 2024-12), never the 2025 holdout - otherwise
+# the same 2025 observations that back the holdout accuracy above would
+# also leak into the CV folds and inflate both numbers on the same data.
+n_folds_clean <- length(seq(360, nrow(train) - h, by = 6))
+origins <- seq(360, nrow(train) - h, by = 6)
 
 set.seed(2026)
-cv_fits <- rain |>
+cv_fits <- train |>
   stretch_tsibble(.init = 360, .step = 6) |>
   model(
     snaive  = SNAIVE(precip),
@@ -87,7 +112,7 @@ cv_fits <- rain |>
     tslm_C  = TSLM(precip ~ trend() + fourier(K = 4))
   )
 
-cv_acc <- cv_fits |> forecast(h = 12) |> accuracy(rain, by = c(".model", ".id"))
+cv_acc <- cv_fits |> forecast(h = 12) |> accuracy(train, by = c(".model", ".id"))
 
 cv_summary <- cv_acc |>
   filter(!is.na(MASE), .id <= n_folds_clean) |>
@@ -96,10 +121,11 @@ cv_summary <- cv_acc |>
             min_MASE = min(MASE), max_MASE = max(MASE),
             mean_RMSE = mean(RMSE), n_folds = n())
 
-# TBATS CV
+# TBATS CV - every slice drawn from train, not rain, so 2025 is never
+# touched inside this loop either.
 cv_tbats <- map_dfr(origins, function(i) {
-  tr  <- rain |> slice(1:i)
-  te  <- rain |> slice((i + 1):(i + h)) |> pull(precip)
+  tr  <- train |> slice(1:i)
+  te  <- train |> slice((i + 1):(i + h)) |> pull(precip)
   m   <- forecast::tbats(ts(tr$precip, frequency = 12), use.box.cox = NULL,
                           use.trend = FALSE, use.damped.trend = FALSE,
                           seasonal.periods = 12)

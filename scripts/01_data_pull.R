@@ -23,13 +23,20 @@ rain <- df |>
     month = yearmonth(paste(YEAR, month_num, sep = "-"))
   ) |>
   arrange(month) |>
-  as_tsibble(index = month) |>
+  as_tsibble(index = month)
+
+missing_before <- sum(is.na(rain$precip))
+
+rain <- rain |>
   mutate(precip = zoo::na.approx(precip, na.rm = FALSE)) |>
   select(month, precip)
+
+missing_after <- sum(is.na(rain$precip))
 
 dir.create("data", showWarnings = FALSE)
 dir.create("output", showWarnings = FALSE)
 saveRDS(rain, "data/rain.rds")
 
-cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)),
-    "| NAs remaining:", sum(is.na(rain$precip)), "\n")
+cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
+cat("Missing before interpolation:", missing_before,
+    "| Missing after interpolation:", missing_after, "\n")

@@ -60,12 +60,19 @@ rain <- df |>
     month     = yearmonth(paste(YEAR, month_num, sep = "-"))
   ) |>
   arrange(month) |>
-  as_tsibble(index = month) |>
+  as_tsibble(index = month)
+
+missing_before <- sum(is.na(rain$precip))
+
+rain <- rain |>
   mutate(precip = zoo::na.approx(precip, na.rm = FALSE)) |>
   select(month, precip)
 
-cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)),
-    "| NAs remaining:", sum(is.na(rain$precip)), "\n")
+missing_after <- sum(is.na(rain$precip))
+
+cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
+cat("Missing before interpolation:", missing_before,
+    "| Missing after interpolation:", missing_after, "\n")
 
 # ------------------------------------------------------------------ EDA
 rain |> autoplot(precip) +
@@ -135,18 +142,22 @@ holdout <- acc_train |> left_join(acc_test, by = ".model") |>
 print(holdout)
 
 # --------------------------------- overfitting check: rolling-origin CV
-# 29 folds: fit on the first 360 months, then refit every 6 months, each
-# fit scored on the following 12. The CV ratio and gap are the
-# authoritative overfitting numbers - the single holdout above is one
-# draw only and can flatter or punish a model by luck of the window.
-n_folds_clean <- length(seq(360, nrow(rain) - h, by = 6))
+# Folds run only over the training window (up to 2024-12), never the
+# 2025 holdout - otherwise the same 2025 observations that back the
+# holdout accuracy above would also leak into the CV folds and inflate
+# both numbers on the same data. Fit on the first 360 months, then
+# refit every 6 months, each fit scored on the following 12. The CV
+# ratio and gap are the authoritative overfitting numbers - the single
+# holdout above is one draw only and can flatter or punish a model by
+# luck of the window.
+n_folds_clean <- length(seq(360, nrow(train) - h, by = 6))
 
 set.seed(2026)
-cv_acc <- rain |>
+cv_acc <- train |>
   stretch_tsibble(.init = 360, .step = 6) |>
   model(ets = ETS(precip ~ error("A") + trend("N") + season("A"))) |>
   forecast(h = h) |>
-  accuracy(rain, by = c(".model", ".id"))
+  accuracy(train, by = c(".model", ".id"))
 
 cv_summary <- cv_acc |>
   filter(!is.na(MASE), .id <= n_folds_clean) |>

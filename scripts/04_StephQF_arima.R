@@ -61,12 +61,19 @@ rain <- df |>
     month     = yearmonth(paste(YEAR, month_num, sep = "-"))
   ) |>
   arrange(month) |>
-  as_tsibble(index = month) |>
+  as_tsibble(index = month)
+
+missing_before <- sum(is.na(rain$precip))
+
+rain <- rain |>
   mutate(precip = zoo::na.approx(precip, na.rm = FALSE)) |>
   select(month, precip)
 
-cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)),
-    "| NAs remaining:", sum(is.na(rain$precip)), "\n")
+missing_after <- sum(is.na(rain$precip))
+
+cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
+cat("Missing before interpolation:", missing_before,
+    "| Missing after interpolation:", missing_after, "\n")
 
 # ------------------------------------------------------------------ EDA
 rain |> autoplot(precip) +
@@ -116,9 +123,20 @@ fit |> select(arima_four4) |> report()
 fit |> select(arima_four4) |> gg_tsresiduals()
 
 # ------------------------------------------------- residual diagnostics
+# Ljung-Box degrees of freedom must be reduced by the number of AR/MA
+# parameters the model itself estimated, or the test overstates how
+# random the residuals are. Counted from the fitted coefficient names
+# (ar1, ar2, ..., ma1, ma2, ...) rather than assumed, since PDQ(0,0,0)
+# means there is no seasonal ar/ma term to also count, and the Fourier
+# regressor coefficients are named after the regressor, not ar/ma, so
+# this pattern only ever matches genuine ARMA error terms.
+arima_coefs  <- fit |> select(arima_four4) |> tidy()
+arima_dof    <- sum(grepl("^(ar|ma)[0-9]+$", arima_coefs$term))
+cat("\nARIMA AR/MA parameter count used as Ljung-Box dof:", arima_dof, "\n")
+
 cat("\n== Ljung-Box on ARIMA residuals (want p > 0.05) ==\n")
-print(augment(fit) |> filter(.model == "arima_four4") |> features(.innov, ljung_box, lag = 12))
-print(augment(fit) |> filter(.model == "arima_four4") |> features(.innov, ljung_box, lag = 24))
+print(augment(fit) |> filter(.model == "arima_four4") |> features(.innov, ljung_box, lag = 12, dof = arima_dof))
+print(augment(fit) |> filter(.model == "arima_four4") |> features(.innov, ljung_box, lag = 24, dof = arima_dof))
 
 cat("\n== Residual ACF lags outside the white-noise band ==\n")
 print(augment(fit) |> filter(.model == "arima_four4") |> as_tibble() |>
@@ -136,18 +154,22 @@ holdout <- acc_train |> left_join(acc_test, by = ".model") |>
 print(holdout)
 
 # --------------------------------- overfitting check: rolling-origin CV
-# 29 folds: fit on the first 360 months, then refit every 6 months, each
-# fit scored on the following 12. The CV ratio and gap are the
-# authoritative overfitting numbers - the single holdout above is one
-# draw only and can flatter or punish a model by luck of the window.
-n_folds_clean <- length(seq(360, nrow(rain) - h, by = 6))
+# Folds run only over the training window (up to 2024-12), never the
+# 2025 holdout - otherwise the same 2025 observations that back the
+# holdout accuracy above would also leak into the CV folds and inflate
+# both numbers on the same data. Fit on the first 360 months, then
+# refit every 6 months, each fit scored on the following 12. The CV
+# ratio and gap are the authoritative overfitting numbers - the single
+# holdout above is one draw only and can flatter or punish a model by
+# luck of the window.
+n_folds_clean <- length(seq(360, nrow(train) - h, by = 6))
 
 set.seed(2026)
-cv_acc <- rain |>
+cv_acc <- train |>
   stretch_tsibble(.init = 360, .step = 6) |>
   model(arima_four4 = ARIMA(precip ~ fourier(K = 4) + pdq() + PDQ(0, 0, 0))) |>
   forecast(h = h) |>
-  accuracy(rain, by = c(".model", ".id"))
+  accuracy(train, by = c(".model", ".id"))
 
 cv_summary <- cv_acc |>
   filter(!is.na(MASE), .id <= n_folds_clean) |>

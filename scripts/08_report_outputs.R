@@ -25,7 +25,7 @@ p_C <- overlay_red_actual("tslm_C") +
   labs(title = "TSLM: Forecast vs Actual", y = "mm/day", x = NULL)
 ggsave("output/plots/group_summary/fc_C_tslm.png", p_C, width = 8, height = 5, dpi = 150)
 
-tbats_train_hist <- rain |> as_tibble() |
+tbats_train_hist <- rain |> as_tibble() |>
   filter(month >= plot_from, month < test_start) |>
   transmute(month, value = precip)
 tbats_fc <- tibble(
