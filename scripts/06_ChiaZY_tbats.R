@@ -1,9 +1,16 @@
 # TBATS rainfall forecast
 
 # Setup
+user_library <- Sys.getenv("R_LIBS_USER")
+if (nzchar(user_library)) {
+  dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
+  .libPaths(c(user_library, .libPaths()))
+}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
 pkgs <- c("fpp3", "tseries", "zoo", "forecast", "Kendall")
 new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-if (length(new)) install.packages(new)
+if (length(new)) install.packages(new, lib = .libPaths()[1])
 
 library(dplyr)
 library(purrr)
@@ -62,17 +69,16 @@ cat("Missing before interpolation:", missing_before,
     "| Missing after interpolation:", missing_after, "\n")
 
 # EDA
-rain |> autoplot(precip) +
+p_raw <- rain |> autoplot(precip) +
   labs(title = "KL monthly mean precipitation rate (mm/day)", y = "mm/day")
-rain |> gg_season(precip)    + labs(title = "Seasonal plot - monsoon cycle")
-rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
-rain |> ACF(precip,  lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
-rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
+p_season <- rain |> gg_season(precip) + labs(title = "Seasonal plot - monsoon cycle")
+p_subseries <- rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
+p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
+p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
 # STL decomposition
 p_stl <- rain |> model(STL(precip)) |> components() |> autoplot() +
   labs(title = "STL decomposition")
-print(p_stl)
 print(rain |> features(precip, feat_stl))
 
 # Statistical tests
@@ -103,6 +109,21 @@ fit_tbats <- forecast::tbats(train_ts, use.box.cox = NULL, use.trend = FALSE,
 fc_tbats  <- forecast::forecast(fit_tbats, h = h)
 print(fit_tbats)
 cat("\nBox-Cox lambda:", if (is.null(fit_tbats$lambda)) "none" else fit_tbats$lambda, "\n")
+
+tbats_specification <- tibble(
+  model = "TBATS",
+  box_cox_selection = "automatic by AIC",
+  lambda = if (is.null(fit_tbats$lambda)) NA_real_ else fit_tbats$lambda,
+  ar_order = length(fit_tbats$ar.coefficients),
+  ma_order = length(fit_tbats$ma.coefficients),
+  trend = !is.null(fit_tbats$beta),
+  damped_trend = !is.null(fit_tbats$damping.parameter),
+  seasonal_period = paste(fit_tbats$seasonal.periods, collapse = ","),
+  harmonics = paste(fit_tbats$k.vector, collapse = ","),
+  mase_d = 0L,
+  mase_D = 1L,
+  ljung_box_fitdf = 0L
+)
 
 test_actual <- rain |> filter(month > max(train$month)) |> pull(precip)
 acc_tbats   <- forecast::accuracy(
@@ -187,12 +208,16 @@ results <- tibble(
 
 # Output
 dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
-write.csv(results, "output/tbats_results.csv", row.names = FALSE)
-write.csv(accuracy_display, "output/tbats_accuracy_train_test.csv", row.names = FALSE)
+dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
+write.csv(tbats_specification, "output/tables/model_details/tbats_parameters.csv", row.names = FALSE)
 
 # STL plot
-ggsave("output/plots/group_summary/stl_tbats_decomposition.png", p_stl,
-       width = 9, height = 6, dpi = 150)
+suppressMessages(
+  suppressWarnings(
+    ggsave("output/plots/group_summary/stl_tbats_decomposition.png", p_stl,
+           width = 9, height = 6, dpi = 150)
+  )
+)
 
 # Forecast plot
 zoom_from       <- yearmonth("2023 Jan")
@@ -225,4 +250,4 @@ png("output/plots/group_summary/resid_tbats.png", width = 800, height = 600, res
 forecast::checkresiduals(fit_tbats)
 dev.off()
 
-cat("\nDone. Wrote TBATS result and train/test accuracy CSV files, plus 3 plots.\n")
+cat("\nDone. Wrote the TBATS parameter table and 3 plots.\n")

@@ -1,9 +1,16 @@
 # TSLM with trend and Fourier terms rainfall forecast
 
 # Setup
+user_library <- Sys.getenv("R_LIBS_USER")
+if (nzchar(user_library)) {
+  dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
+  .libPaths(c(user_library, .libPaths()))
+}
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
 pkgs <- c("fpp3", "tseries", "zoo", "Kendall")
 new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-if (length(new)) install.packages(new)
+if (length(new)) install.packages(new, lib = .libPaths()[1])
 
 library(dplyr)
 library(tidyr)
@@ -61,12 +68,12 @@ cat("Missing before interpolation:", missing_before,
     "| Missing after interpolation:", missing_after, "\n")
 
 # EDA
-rain |> autoplot(precip) +
+p_raw <- rain |> autoplot(precip) +
   labs(title = "KL monthly mean precipitation rate (mm/day)", y = "mm/day")
-rain |> gg_season(precip)    + labs(title = "Seasonal plot - monsoon cycle")
-rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
-rain |> ACF(precip,  lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
-rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
+p_season <- rain |> gg_season(precip) + labs(title = "Seasonal plot - monsoon cycle")
+p_subseries <- rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
+p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
+p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
 print(rain |> features(precip, feat_stl))
 
@@ -116,6 +123,22 @@ print(accuracy_display)
 fit |> select(tslm) |> report()
 fit |> select(tslm) |> gg_tsresiduals()
 
+tslm_parameters <- fit |>
+  select(tslm) |>
+  tidy() |>
+  mutate(model = "TSLM with trend and Fourier K=4") |>
+  relocate(model)
+
+tslm_specification <- tibble(
+  model = "TSLM with trend and Fourier terms",
+  estimation = "ordinary least squares",
+  trend = "linear",
+  seasonal_period = 12L,
+  fourier_K = 4L,
+  fourier_regressors = 8L,
+  autoregressive_errors = FALSE
+)
+
 # Residual checks
 cat("\n== Ljung-Box test: TSLM residuals ==\n")
 print(augment(fit) |> filter(.model == "tslm") |> features(.innov, ljung_box, lag = 12))
@@ -164,8 +187,8 @@ results <- tibble(
 
 # Output
 dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
-write.csv(results, "output/tslm_results.csv", row.names = FALSE)
-write.csv(accuracy_display, "output/tslm_accuracy_train_test.csv", row.names = FALSE)
+dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
+write.csv(tslm_parameters, "output/tables/model_details/tslm_parameters.csv", row.names = FALSE)
 
 # Forecast plot
 plot_from       <- yearmonth("2013 Jan")
@@ -183,4 +206,4 @@ ggsave("output/plots/group_summary/fc_tslm.png", p_fc, width = 8, height = 5, dp
 ggsave("output/plots/group_summary/resid_tslm.png",
        fit |> select(tslm) |> gg_tsresiduals(), width = 8, height = 6, dpi = 150)
 
-cat("\nDone. Wrote TSLM result and train/test accuracy CSV files, plus 2 plots.\n")
+cat("\nDone. Wrote the TSLM parameter table and 2 plots.\n")
