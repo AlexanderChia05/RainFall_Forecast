@@ -1,0 +1,5 @@
+"model","data_set","RMSE","MAE","MAPE","MASE"
+"Seasonal naive","Training set",3.319,2.574,53.406,1
+"Seasonal naive","Test set",2.694,2.424,43.173,0.942
+"TBATS","Training set",2.449,1.878,38.844,0.73
+"TBATS","Test set",2.335,1.984,35.702,0.771

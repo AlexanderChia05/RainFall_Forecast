@@ -1,4 +1,19 @@
-.Rproj.user
+# R and RStudio local state
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
+.Renviron
+
+# Temporary and cache files
+tmp/
+.Rcache/
+*.Rcheck/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

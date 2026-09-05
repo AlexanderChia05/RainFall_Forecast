@@ -7,19 +7,23 @@ url <- paste0(
   "&start=1981&end=2025&format=CSV"
 )
 
-raw_lines <- system(paste0("curl -s '", url, "'"), intern = TRUE)
-start_line <- which(grepl("-END HEADER-", raw_lines)) + 1
+raw_lines <- system(paste0("curl -s ", shQuote(url)), intern = TRUE)
+header_end <- which(grepl("-END HEADER-", raw_lines))
+if (length(header_end) != 1L) {
+  stop("NASA POWER download failed or returned an unexpected response.")
+}
+start_line <- header_end + 1L
 df <- read.csv(text = paste(raw_lines[start_line:length(raw_lines)], collapse = "\n"),
                 stringsAsFactors = FALSE)
 
-month_abbr <- c("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
+month_levels <- c("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
 
 rain <- df |>
-  select(YEAR, all_of(month_abbr)) |>
+  select(YEAR, all_of(month_levels)) |>
   pivot_longer(-YEAR, names_to = "month_abbr", values_to = "precip") |>
   mutate(
     precip = na_if(precip, -999),
-    month_num = match(month_abbr, month_abbr),
+    month_num = match(.data$month_abbr, month_levels),
     month = yearmonth(paste(YEAR, month_num, sep = "-"))
   ) |>
   arrange(month) |>
