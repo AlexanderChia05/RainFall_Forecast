@@ -5,7 +5,34 @@ source("scripts/00_setup.R")
 if (!file.exists("data/rain.rds")) source("scripts/01_data_pull.R")
 rain <- readRDS("data/rain.rds")
 
-# Shared EDA and stationarity checks are centralized in 02_eda_stationarity.R.
+cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)),
+    "| missing:", sum(is.na(rain$precip)), "\n")
+
+# Dataset characteristics quoted in the individual report. They are repeated here so
+# that this script reproduces every number it cites without sourcing another model
+# script or 02_eda_stationarity.R.
+cat("\n== STL feature strengths ==\n")
+print(rain |> features(precip, feat_stl))
+
+cat("\n== ADF test ==\n")
+print(adf.test(rain$precip))
+
+cat("\n== KPSS test ==\n")
+print(kpss.test(rain$precip))
+
+cat("\n== Ljung-Box test: raw series ==\n")
+print(Box.test(rain$precip, lag = 12, type = "Ljung-Box"))
+print(Box.test(rain$precip, lag = 24, type = "Ljung-Box"))
+
+cat("\n== Mann-Kendall trend test ==\n")
+print(Kendall::MannKendall(rain$precip))
+
+cat("\n== Distribution of the raw series ==\n")
+print(rain |> as_tibble() |> summarise(
+  n    = n(),          missing = sum(is.na(precip)),
+  min  = min(precip),  max     = max(precip),
+  mean = mean(precip), sd      = sd(precip)
+))
 
 # Train/test split
 h     <- 12

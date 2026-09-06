@@ -5,10 +5,33 @@ source("scripts/00_setup.R")
 if (!file.exists("data/rain.rds")) source("scripts/01_data_pull.R")
 rain <- readRDS("data/rain.rds")
 
-# Shared EDA and stationarity checks are centralized in 02_eda_stationarity.R.
-# Keep this model-specific STL figure for the TBATS report output.
+cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)),
+    "| missing:", sum(is.na(rain$precip)), "\n")
+
+# Dataset characteristics quoted in the individual report. They are repeated here so
+# that this script reproduces every number it cites without sourcing another model
+# script or 02_eda_stationarity.R.
 p_stl <- rain |> model(STL(precip)) |> components() |> autoplot() +
   labs(title = "STL decomposition")
+
+cat("\n== STL feature strengths ==\n")
+print(rain |> features(precip, feat_stl))
+
+cat("\n== ADF test ==\n")
+print(adf.test(rain$precip))
+
+cat("\n== KPSS test ==\n")
+print(kpss.test(rain$precip))
+
+cat("\n== Ljung-Box test: raw series ==\n")
+print(Box.test(rain$precip, lag = 12, type = "Ljung-Box"))
+print(Box.test(rain$precip, lag = 24, type = "Ljung-Box"))
+
+cat("\n== Mann-Kendall trend test ==\n")
+print(Kendall::MannKendall(rain$precip))
+
+cat("\n== Minimum precipitation ==\n")
+print(min(rain$precip, na.rm = TRUE))
 
 # Train/test split
 h        <- 12
@@ -81,6 +104,7 @@ cat("n_lags_out_12:", acf_out_of_bounds(resid_tbats, lag.max = 12),
 # Train/test comparison
 mase_train <- acc_tbats["Training set", "MASE"]
 rmse_train <- acc_tbats["Training set", "RMSE"]
+mae_train  <- acc_tbats["Training set", "MAE"]
 
 # Rolling-origin CV
 origins <- seq(360, nrow(train) - h, by = 6)
@@ -98,21 +122,26 @@ cv_tbats <- map_dfr(origins, function(i) {
     d = 0,
     D = 1
   )
-  tibble(MASE = acc["Test set", "MASE"], RMSE = acc["Test set", "RMSE"])
+  tibble(MASE = acc["Test set", "MASE"],
+         RMSE = acc["Test set", "RMSE"],
+         MAE  = acc["Test set", "MAE"])
 })
 
 cv_summary <- cv_tbats |>
   summarise(mean_MASE = mean(MASE), sd_MASE = sd(MASE),
             min_MASE  = min(MASE),  max_MASE = max(MASE),
-            mean_RMSE = mean(RMSE), n_folds  = n())
+            mean_RMSE = mean(RMSE), mean_MAE = mean(MAE),
+            n_folds   = n())
 print(cv_summary)
 
 results <- tibble(
   model         = "tbats",
   MASE_train    = mase_train,
   RMSE_train    = rmse_train,
+  MAE_train     = mae_train,
   MASE_cv       = cv_summary$mean_MASE,
   RMSE_cv       = cv_summary$mean_RMSE,
+  MAE_cv        = cv_summary$mean_MAE,
   sd_MASE_cv    = cv_summary$sd_MASE,
   n_folds       = cv_summary$n_folds,
   lb_pvalue_24  = Box.test(resid_tbats, lag = 24, type = "Ljung-Box")$p.value
