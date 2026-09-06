@@ -1,0 +1,6 @@
+"model","LB_pvalue_12","LB_pvalue_24","ACF_lags_out_12","ACF_lags_out_24"
+"ETS",0.522,0.122,0,1
+"Seasonal naive",0,0,5,6
+"TSLM + Fourier",0.476,0.148,0,1
+"ARIMA + Fourier",0.467,0.108,0,1
+"TBATS",0.524,0.089,1,2

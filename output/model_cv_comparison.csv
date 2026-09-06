@@ -1,0 +1,6 @@
+"model","CV_RMSE","CV_MASE","SD_MASE","folds"
+"TBATS",2.495,0.783,0.189,27
+"ARIMA + Fourier",2.538,0.801,0.194,27
+"ETS",2.566,0.811,0.188,27
+"TSLM + Fourier",2.557,0.814,0.176,27
+"Seasonal naive",3.179,0.985,0.328,27

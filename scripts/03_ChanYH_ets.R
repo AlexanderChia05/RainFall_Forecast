@@ -120,7 +120,22 @@ accuracy_display <- bind_rows(
 cat("\n--- ETS and Benchmark Accuracy ---\n")
 print(accuracy_display)
 fit |> select(ets) |> report()
-fit |> select(ets) |> gg_tsresiduals()
+
+# ETS-specific display: the estimated level and seasonal states explain how the
+# model represents the rainfall series.  This is different from the generic
+# STL decomposition used during EDA.
+p_ets_states <- fit |>
+  select(ets) |>
+  components() |>
+  autoplot() +
+  labs(title = "ETS(A,N,A): Estimated states")
+
+# Residual diagnostics are retained for direct checking across all four models.
+p_resid_ets <- fit |>
+  select(ets) |>
+  gg_tsresiduals()
+p_resid_ets[[1]] <- p_resid_ets[[1]] +
+  labs(title = "ETS(A,N,A): Residual diagnostics")
 
 # Save the fitted smoothing parameters and initial states printed by tidy().
 ets_parameters <- fit |>
@@ -181,7 +196,7 @@ dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE
 write.csv(ets_parameters, "output/tables/model_details/ets_parameters.csv", row.names = FALSE)
 
 # Forecast plot
-plot_from       <- yearmonth("2013 Jan")
+plot_from       <- yearmonth("2023 Jan")
 test_actual_tbl <- rain |> as_tibble() |> filter(month > max(train$month)) |>
   transmute(month, precip)
 
@@ -193,7 +208,10 @@ p_fc <- fc |> filter(.model == "ets") |>
   theme_minimal()
 ggsave("output/plots/group_summary/fc_ets.png", p_fc, width = 8, height = 5, dpi = 150)
 
-ggsave("output/plots/group_summary/resid_ets.png",
-       fit |> select(ets) |> gg_tsresiduals(), width = 8, height = 6, dpi = 150)
+ggsave("output/plots/group_summary/ets_states.png",
+       p_ets_states, width = 8, height = 7, dpi = 150)
 
-cat("\nDone. Wrote the ETS parameter table and 2 plots.\n")
+ggsave("output/plots/group_summary/resid_ets.png",
+       p_resid_ets, width = 8, height = 6, dpi = 150)
+
+cat("\nDone. Wrote the ETS parameter table and 3 plots.\n")

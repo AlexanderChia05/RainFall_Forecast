@@ -116,6 +116,14 @@ arima_series <- if (arima_d > 0) {
   train |> mutate(precip_diff = precip)
 }
 
+p_diff_series <- arima_series |>
+  autoplot(precip_diff) +
+  labs(
+    title = paste0("Differenced precipitation series (d = ", arima_d, ")"),
+    x = NULL,
+    y = "Differenced mm/day"
+  )
+
 p_acf_diff <- arima_series |>
   ACF(precip_diff, lag_max = 36) |>
   autoplot() +
@@ -126,7 +134,15 @@ p_pacf_diff <- arima_series |>
   autoplot() +
   labs(title = paste0("PACF after differencing (d = ", arima_d, ")"))
 
-p_arima_correlation <- patchwork::wrap_plots(p_acf_diff, p_pacf_diff, ncol = 2)
+p_arima_correlation <- patchwork::wrap_plots(
+  p_diff_series,
+  p_acf_diff,
+  p_pacf_diff,
+  design = "AA\nBC"
+) +
+  patchwork::plot_annotation(
+    title = "ARIMA + Fourier: Differencing and correlation diagnostics"
+  )
 
 # Accuracy
 accuracy_display <- bind_rows(
@@ -145,7 +161,12 @@ accuracy_display <- bind_rows(
 cat("\n--- ARIMA and Benchmark Accuracy ---\n")
 print(accuracy_display)
 fit |> select(arima_four4) |> report()
-fit |> select(arima_four4) |> gg_tsresiduals()
+
+p_resid_arima <- fit |>
+  select(arima_four4) |>
+  gg_tsresiduals()
+p_resid_arima[[1]] <- p_resid_arima[[1]] +
+  labs(title = "ARIMA + Fourier: Residual diagnostics")
 
 # Residual checks
 arima_coefs  <- fit |> select(arima_four4) |> tidy()
@@ -220,10 +241,10 @@ dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
 dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
 write.csv(arima_parameters, "output/tables/model_details/arima_parameters.csv", row.names = FALSE)
 ggsave("output/plots/group_summary/arima_differenced_acf_pacf.png",
-       p_arima_correlation, width = 10, height = 4.5, dpi = 150)
+       p_arima_correlation, width = 10, height = 7, dpi = 150)
 
 # Forecast plot
-plot_from       <- yearmonth("2013 Jan")
+plot_from       <- yearmonth("2023 Jan")
 test_actual_tbl <- rain |> as_tibble() |> filter(month > max(train$month)) |>
   transmute(month, precip)
 
@@ -236,6 +257,6 @@ p_fc <- fc |> filter(.model == "arima_four4") |>
 ggsave("output/plots/group_summary/fc_arima.png", p_fc, width = 8, height = 5, dpi = 150)
 
 ggsave("output/plots/group_summary/resid_arima.png",
-       fit |> select(arima_four4) |> gg_tsresiduals(), width = 8, height = 6, dpi = 150)
+       p_resid_arima, width = 8, height = 6, dpi = 150)
 
 cat("\nDone. Wrote the ARIMA parameter table and 3 plots.\n")
