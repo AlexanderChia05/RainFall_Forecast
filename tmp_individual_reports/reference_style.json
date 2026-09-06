@@ -1,0 +1,171 @@
+{
+  "input": "C:\\Users\\Alex\\Downloads\\RDS2S1G6_Group4_ChiaZhenYang.docx",
+  "fonts_by_char_count": {
+    "Times New Roman": 8994,
+    "Courier New": 5700
+  },
+  "direct_run_formatting_runs": 218,
+  "direct_paragraph_formatting_paragraphs": 63,
+  "heading_like_paragraphs_not_heading_style": [
+    {
+      "para_index": 2,
+      "text": "FACULTY OF ",
+      "style": "Title"
+    },
+    {
+      "para_index": 3,
+      "text": "KUALA LUMPUR CAMPUS",
+      "style": "normal"
+    },
+    {
+      "para_index": 5,
+      "text": "DEPARTMENT OF MATHEMATICAL SCIENCES",
+      "style": "normal"
+    },
+    {
+      "para_index": 7,
+      "text": "BMMS2094 Statistics for Data Science",
+      "style": "normal"
+    },
+    {
+      "para_index": 9,
+      "text": "Assignment (Individual)",
+      "style": "normal"
+    },
+    {
+      "para_index": 12,
+      "text": "Title: Forecasting Monthly Mean Precipitation in Kuala Lumpur",
+      "style": "normal"
+    },
+    {
+      "para_index": 20,
+      "text": "I. METHODOLOGY",
+      "style": "normal"
+    },
+    {
+      "para_index": 21,
+      "text": "A. Dataset Characteristics Motivating Model Selection",
+      "style": "normal"
+    },
+    {
+      "para_index": 24,
+      "text": "B. Model Specification and Parameter Selection",
+      "style": "normal"
+    },
+    {
+      "para_index": 27,
+      "text": "II. DATA ANALYSIS",
+      "style": "normal"
+    },
+    {
+      "para_index": 31,
+      "text": "III. CONCLUSION",
+      "style": "normal"
+    },
+    {
+      "para_index": 35,
+      "text": "REFERENCES",
+      "style": "normal"
+    },
+    {
+      "para_index": 42,
+      "text": "APPENDIX A: TABLE AND FIGURES",
+      "style": "normal"
+    },
+    {
+      "para_index": 49,
+      "text": "APPENDIX B: PROGRAMMING SOURCE CODE (06_ChiaZY_tbats.R)",
+      "style": "normal"
+    },
+    {
+      "para_index": 225,
+      "text": "Student Name",
+      "style": "normal"
+    },
+    {
+      "para_index": 227,
+      "text": "Student ID",
+      "style": "normal"
+    },
+    {
+      "para_index": 229,
+      "text": "Academic Session",
+      "style": "normal"
+    },
+    {
+      "para_index": 231,
+      "text": "Programme",
+      "style": "normal"
+    },
+    {
+      "para_index": 233,
+      "text": "Tutorial Group",
+      "style": "normal"
+    },
+    {
+      "para_index": 235,
+      "text": "Lecturer\u2019s Name",
+      "style": "normal"
+    }
+  ],
+  "examples": {
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 1,
+        "text": "",
+        "style": "normal"
+      },
+      {
+        "para_index": 2,
+        "text": "FACULTY OF ",
+        "style": "Title"
+      },
+      {
+        "para_index": 3,
+        "text": "KUALA LUMPUR CAMPUS",
+        "style": "normal"
+      },
+      {
+        "para_index": 4,
+        "text": "",
+        "style": "normal"
+      },
+      {
+        "para_index": 5,
+        "text": "DEPARTMENT OF MATHEMATICAL SCIENCES",
+        "style": "normal"
+      }
+    ],
+    "direct_run_formatting": [
+      {
+        "para_index": 2,
+        "run_text": "FACULTY OF ",
+        "style": "Title"
+      },
+      {
+        "para_index": 3,
+        "run_text": "KUALA LUMPUR CAMPUS",
+        "style": "normal"
+      },
+      {
+        "para_index": 5,
+        "run_text": "DEPARTMENT OF MATHEMATICAL SCIENCES",
+        "style": "normal"
+      },
+      {
+        "para_index": 7,
+        "run_text": "BMMS2094 Statistics for Data Science",
+        "style": "normal"
+      },
+      {
+        "para_index": 9,
+        "run_text": "Assignment (Individual)",
+        "style": "normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

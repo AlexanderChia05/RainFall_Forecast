@@ -1,67 +1,8 @@
 # TSLM with trend and Fourier terms rainfall forecast
 
-# Setup
-user_library <- Sys.getenv("R_LIBS_USER")
-if (nzchar(user_library)) {
-  dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
-  .libPaths(c(user_library, .libPaths()))
-}
-options(repos = c(CRAN = "https://cloud.r-project.org"))
-
-pkgs <- c("fpp3", "tseries", "zoo", "Kendall")
-new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-if (length(new)) install.packages(new, lib = .libPaths()[1])
-
-library(dplyr)
-library(tidyr)
-library(fpp3)
-library(tseries)
-
-acf_out_of_bounds <- function(resid, lag.max = 12) {
-  r  <- na.omit(resid)
-  n  <- length(r)
-  ci <- 1.96 / sqrt(n)
-  a  <- acf(r, plot = FALSE, lag.max = lag.max)$acf[-1]
-  sum(abs(a) > ci)
-}
-
-# Data
-url <- paste0(
-  "https://power.larc.nasa.gov/api/temporal/monthly/point?",
-  "parameters=PRECTOTCORR&community=AG",
-  "&longitude=101.6869&latitude=3.1390",
-  "&start=1981&end=2025&format=CSV"
-)
-
-raw_lines  <- system(paste0("curl -s ", shQuote(url)), intern = TRUE)
-header_end <- which(grepl("-END HEADER-", raw_lines))
-if (length(header_end) != 1L) {
-  stop("NASA POWER download failed or returned an unexpected response.")
-}
-start_line <- header_end + 1L
-df <- read.csv(text = paste(raw_lines[start_line:length(raw_lines)], collapse = "\n"),
-               stringsAsFactors = FALSE)
-
-month_levels <- c("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
-
-rain <- df |>
-  select(YEAR, all_of(month_levels)) |>
-  pivot_longer(-YEAR, names_to = "month_abbr", values_to = "precip") |>
-  mutate(
-    precip    = na_if(precip, -999),
-    month_num = match(.data$month_abbr, month_levels),
-    month     = yearmonth(paste(YEAR, month_num, sep = "-"))
-  ) |>
-  arrange(month) |>
-  as_tsibble(index = month)
-
-missing_before <- sum(is.na(rain$precip))
-
-rain <- rain |>
-  mutate(precip = zoo::na.approx(precip, na.rm = FALSE)) |>
-  select(month, precip)
-
-missing_after <- sum(is.na(rain$precip))
+# Shared setup and data acquisition make this script independently runnable.
+source("scripts/00_setup.R")
+source("scripts/01_data_pull.R")
 
 cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
 cat("Missing before interpolation:", missing_before,
@@ -121,44 +62,7 @@ cat("\n--- TSLM and Benchmark Accuracy ---\n")
 print(accuracy_display)
 
 fit |> select(tslm) |> report()
-
-# TSLM-specific display: compare the regression fit with the observations and
-# check whether residual size changes with the fitted rainfall level.
-tslm_aug <- augment(fit) |>
-  filter(.model == "tslm") |>
-  as_tibble()
-
-p_tslm_fit <- ggplot(tslm_aug, aes(x = month)) +
-  geom_line(aes(y = precip, colour = "Observed"), linewidth = 0.45) +
-  geom_line(aes(y = .fitted, colour = "TSLM fitted"), linewidth = 0.55) +
-  scale_colour_manual(values = c("Observed" = "grey35", "TSLM fitted" = "#0072B2")) +
-  labs(title = "Observed and fitted precipitation", x = NULL, y = "mm/day", colour = NULL) +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-p_tslm_resid_fitted <- ggplot(tslm_aug, aes(x = .fitted, y = .innov)) +
-  geom_hline(yintercept = 0, colour = "grey50", linetype = "dashed") +
-  geom_point(alpha = 0.55, colour = "#D55E00", size = 1.4) +
-  geom_smooth(method = "loess", formula = y ~ x, se = FALSE,
-              colour = "#0072B2", linewidth = 0.7) +
-  labs(title = "Residuals versus fitted values", x = "Fitted mm/day", y = "Innovation") +
-  theme_minimal()
-
-p_tslm_diagnostics <- patchwork::wrap_plots(
-  p_tslm_fit,
-  p_tslm_resid_fitted,
-  ncol = 1,
-  heights = c(1.25, 1)
-) +
-  patchwork::plot_annotation(
-    title = "TSLM + Fourier: Regression diagnostics"
-  )
-
-p_resid_tslm <- fit |>
-  select(tslm) |>
-  gg_tsresiduals()
-p_resid_tslm[[1]] <- p_resid_tslm[[1]] +
-  labs(title = "TSLM + Fourier: Residual diagnostics")
+fit |> select(tslm) |> gg_tsresiduals()
 
 tslm_parameters <- fit |>
   select(tslm) |>
@@ -228,7 +132,7 @@ dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE
 write.csv(tslm_parameters, "output/tables/model_details/tslm_parameters.csv", row.names = FALSE)
 
 # Forecast plot
-plot_from       <- yearmonth("2023 Jan")
+plot_from       <- yearmonth("2013 Jan")
 test_actual_tbl <- rain |> as_tibble() |> filter(month > max(train$month)) |>
   transmute(month, precip)
 
@@ -238,12 +142,13 @@ p_fc <- fc |> filter(.model == "tslm") |>
             color = "red", linewidth = 0.45) +
   labs(title = "TSLM (trend + Fourier K=4): Forecast vs Actual", y = "mm/day", x = NULL) +
   theme_minimal()
-ggsave("output/plots/group_summary/fc_tslm.png", p_fc, width = 8, height = 5, dpi = 150)
+save_fable_forecast_plot(
+  fc |> filter(.model == "tslm"), rain, "TSLM + Fourier",
+  "TSLM (trend + Fourier K=4): Forecast vs Actual",
+  "output/plots/group_summary/fc_tslm.png"
+)
+u_tslm <- augment(fit) |> filter(.model == "tslm") |> as_tibble()
+save_residual_diagnostic(u_tslm$.innov, u_tslm$month, "TSLM + Fourier",
+                         "output/plots/group_summary/resid_tslm.png")
 
-ggsave("output/plots/group_summary/tslm_fit_diagnostics.png",
-       p_tslm_diagnostics, width = 8, height = 7, dpi = 150)
-
-ggsave("output/plots/group_summary/resid_tslm.png",
-       p_resid_tslm, width = 8, height = 6, dpi = 150)
-
-cat("\nDone. Wrote the TSLM parameter table and 3 plots.\n")
+cat("\nDone. Wrote the TSLM parameter table and 2 plots.\n")

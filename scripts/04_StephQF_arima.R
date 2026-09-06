@@ -1,67 +1,8 @@
 # ARIMA with Fourier terms rainfall forecast
 
-# Setup
-user_library <- Sys.getenv("R_LIBS_USER")
-if (nzchar(user_library)) {
-  dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
-  .libPaths(c(user_library, .libPaths()))
-}
-options(repos = c(CRAN = "https://cloud.r-project.org"))
-
-pkgs <- c("fpp3", "tseries", "zoo", "Kendall", "patchwork")
-new  <- pkgs[!pkgs %in% installed.packages()[, "Package"]]
-if (length(new)) install.packages(new, lib = .libPaths()[1])
-
-library(dplyr)
-library(tidyr)
-library(fpp3)
-library(tseries)
-
-acf_out_of_bounds <- function(resid, lag.max = 12) {
-  r  <- na.omit(resid)
-  n  <- length(r)
-  ci <- 1.96 / sqrt(n)
-  a  <- acf(r, plot = FALSE, lag.max = lag.max)$acf[-1]
-  sum(abs(a) > ci)
-}
-
-# Data
-url <- paste0(
-  "https://power.larc.nasa.gov/api/temporal/monthly/point?",
-  "parameters=PRECTOTCORR&community=AG",
-  "&longitude=101.6869&latitude=3.1390",
-  "&start=1981&end=2025&format=CSV"
-)
-
-raw_lines  <- system(paste0("curl -s ", shQuote(url)), intern = TRUE)
-header_end <- which(grepl("-END HEADER-", raw_lines))
-if (length(header_end) != 1L) {
-  stop("NASA POWER download failed or returned an unexpected response.")
-}
-start_line <- header_end + 1L
-df <- read.csv(text = paste(raw_lines[start_line:length(raw_lines)], collapse = "\n"),
-               stringsAsFactors = FALSE)
-
-month_levels <- c("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
-
-rain <- df |>
-  select(YEAR, all_of(month_levels)) |>
-  pivot_longer(-YEAR, names_to = "month_abbr", values_to = "precip") |>
-  mutate(
-    precip    = na_if(precip, -999),
-    month_num = match(.data$month_abbr, month_levels),
-    month     = yearmonth(paste(YEAR, month_num, sep = "-"))
-  ) |>
-  arrange(month) |>
-  as_tsibble(index = month)
-
-missing_before <- sum(is.na(rain$precip))
-
-rain <- rain |>
-  mutate(precip = zoo::na.approx(precip, na.rm = FALSE)) |>
-  select(month, precip)
-
-missing_after <- sum(is.na(rain$precip))
+# Shared setup and data acquisition make this script independently runnable.
+source("scripts/00_setup.R")
+source("scripts/01_data_pull.R")
 
 cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
 cat("Missing before interpolation:", missing_before,
@@ -116,14 +57,6 @@ arima_series <- if (arima_d > 0) {
   train |> mutate(precip_diff = precip)
 }
 
-p_diff_series <- arima_series |>
-  autoplot(precip_diff) +
-  labs(
-    title = paste0("Differenced precipitation series (d = ", arima_d, ")"),
-    x = NULL,
-    y = "Differenced mm/day"
-  )
-
 p_acf_diff <- arima_series |>
   ACF(precip_diff, lag_max = 36) |>
   autoplot() +
@@ -134,15 +67,7 @@ p_pacf_diff <- arima_series |>
   autoplot() +
   labs(title = paste0("PACF after differencing (d = ", arima_d, ")"))
 
-p_arima_correlation <- patchwork::wrap_plots(
-  p_diff_series,
-  p_acf_diff,
-  p_pacf_diff,
-  design = "AA\nBC"
-) +
-  patchwork::plot_annotation(
-    title = "ARIMA + Fourier: Differencing and correlation diagnostics"
-  )
+p_arima_correlation <- patchwork::wrap_plots(p_acf_diff, p_pacf_diff, ncol = 2)
 
 # Accuracy
 accuracy_display <- bind_rows(
@@ -161,12 +86,7 @@ accuracy_display <- bind_rows(
 cat("\n--- ARIMA and Benchmark Accuracy ---\n")
 print(accuracy_display)
 fit |> select(arima_four4) |> report()
-
-p_resid_arima <- fit |>
-  select(arima_four4) |>
-  gg_tsresiduals()
-p_resid_arima[[1]] <- p_resid_arima[[1]] +
-  labs(title = "ARIMA + Fourier: Residual diagnostics")
+fit |> select(arima_four4) |> gg_tsresiduals()
 
 # Residual checks
 arima_coefs  <- fit |> select(arima_four4) |> tidy()
@@ -241,10 +161,10 @@ dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
 dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
 write.csv(arima_parameters, "output/tables/model_details/arima_parameters.csv", row.names = FALSE)
 ggsave("output/plots/group_summary/arima_differenced_acf_pacf.png",
-       p_arima_correlation, width = 10, height = 7, dpi = 150)
+       p_arima_correlation, width = 10, height = 4.5, dpi = 150)
 
 # Forecast plot
-plot_from       <- yearmonth("2023 Jan")
+plot_from       <- yearmonth("2013 Jan")
 test_actual_tbl <- rain |> as_tibble() |> filter(month > max(train$month)) |>
   transmute(month, precip)
 
@@ -254,9 +174,13 @@ p_fc <- fc |> filter(.model == "arima_four4") |>
             color = "red", linewidth = 0.45) +
   labs(title = "ARIMA + Fourier(K=4): Forecast vs Actual", y = "mm/day", x = NULL) +
   theme_minimal()
-ggsave("output/plots/group_summary/fc_arima.png", p_fc, width = 8, height = 5, dpi = 150)
-
-ggsave("output/plots/group_summary/resid_arima.png",
-       p_resid_arima, width = 8, height = 6, dpi = 150)
+save_fable_forecast_plot(
+  fc |> filter(.model == "arima_four4"), rain, "ARIMA + Fourier",
+  "ARIMA + Fourier(K=4): Forecast vs Actual",
+  "output/plots/group_summary/fc_arima.png"
+)
+u_arima <- augment(fit) |> filter(.model == "arima_four4") |> as_tibble()
+save_residual_diagnostic(u_arima$.innov, u_arima$month, "ARIMA + Fourier",
+                         "output/plots/group_summary/resid_arima.png")
 
 cat("\nDone. Wrote the ARIMA parameter table and 3 plots.\n")

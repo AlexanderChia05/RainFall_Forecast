@@ -1,4 +1,5 @@
 source("scripts/00_setup.R")
+if (!file.exists("data/rain.rds")) source("scripts/01_data_pull.R")
 rain <- readRDS("data/rain.rds")
 
 h <- 12
@@ -50,11 +51,7 @@ acc_train <- fit |> accuracy() |>
          MAE_train = MAE, MAPE_train = MAPE)
 
 # TBATS
-train_start <- c(
-  as.integer(format(min(train$month), "%Y")),
-  as.integer(format(min(train$month), "%m"))
-)
-train_ts   <- ts(train$precip, start = train_start, frequency = 12)
+train_ts   <- ts(train$precip, frequency = 12)
 fit_tbats  <- forecast::tbats(train_ts, use.box.cox = NULL, use.trend = FALSE,
                                use.damped.trend = FALSE, seasonal.periods = 12)
 fc_tbats   <- forecast::forecast(fit_tbats, h = h)
@@ -268,12 +265,3 @@ dir.create("output/tables", recursive = TRUE, showWarnings = FALSE)
 write.csv(model_results, "output/tables/model_results.csv", row.names = FALSE)
 write.csv(model_specifications, "output/tables/model_specifications.csv", row.names = FALSE)
 write.csv(package_versions, "output/tables/package_versions.csv", row.names = FALSE)
-
-# Also write the named comparison outputs used by the report workflow.  These
-# are derived from the same objects as the consolidated tables above, so every
-# published CSV can be reproduced by this script.
-write.csv(accuracy_comparison, "output/model_accuracy_train_test.csv", row.names = FALSE)
-write.csv(summary_tbl, "output/model_comparison_summary.csv", row.names = FALSE)
-write.csv(cv_summary, "output/model_comparison_cv_summary.csv", row.names = FALSE)
-write.csv(cv_comparison, "output/model_cv_comparison.csv", row.names = FALSE)
-write.csv(diagnostics_comparison, "output/model_diagnostics.csv", row.names = FALSE)
