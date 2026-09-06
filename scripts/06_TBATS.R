@@ -2,41 +2,13 @@
 
 # Shared setup and data acquisition make this script independently runnable.
 source("scripts/00_setup.R")
-source("scripts/01_data_pull.R")
+if (!file.exists("data/rain.rds")) source("scripts/01_data_pull.R")
+rain <- readRDS("data/rain.rds")
 
-cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
-cat("Missing before interpolation:", missing_before,
-    "| Missing after interpolation:", missing_after, "\n")
-
-# EDA
-p_raw <- rain |> autoplot(precip) +
-  labs(title = "KL monthly mean precipitation rate (mm/day)", y = "mm/day")
-p_season <- rain |> gg_season(precip) + labs(title = "Seasonal plot - monsoon cycle")
-p_subseries <- rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
-p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
-p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
-
-# STL decomposition
+# Shared EDA and stationarity checks are centralized in 02_eda_stationarity.R.
+# Keep this model-specific STL figure for the TBATS report output.
 p_stl <- rain |> model(STL(precip)) |> components() |> autoplot() +
   labs(title = "STL decomposition")
-print(rain |> features(precip, feat_stl))
-
-# Statistical tests
-cat("\n== ADF test ==\n")
-print(adf.test(rain$precip))
-
-cat("\n== KPSS test ==\n")
-print(kpss.test(rain$precip))
-
-cat("\n== Ljung-Box test: raw series ==\n")
-print(Box.test(rain$precip, lag = 12, type = "Ljung-Box"))
-print(Box.test(rain$precip, lag = 24, type = "Ljung-Box"))
-
-cat("\n== Mann-Kendall trend test ==\n")
-print(Kendall::MannKendall(rain$precip))
-
-cat("\n== Minimum precipitation ==\n")
-print(min(rain$precip, na.rm = TRUE))
 
 # Train/test split
 h        <- 12
