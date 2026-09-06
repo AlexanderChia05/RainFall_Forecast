@@ -76,9 +76,6 @@ p_subseries <- rain |> gg_subseries(precip) + labs(title = "Subseries plot - by 
 p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
 p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
 
-# STL decomposition
-p_stl <- rain |> model(STL(precip)) |> components() |> autoplot() +
-  labs(title = "STL decomposition")
 print(rain |> features(precip, feat_stl))
 
 # Statistical tests
@@ -101,7 +98,11 @@ print(min(rain$precip, na.rm = TRUE))
 # Train/test split
 h        <- 12
 train    <- rain |> filter(month <= max(month) - h)
-train_ts <- ts(train$precip, frequency = 12)
+train_start <- c(
+  as.integer(format(min(train$month), "%Y")),
+  as.integer(format(min(train$month), "%m"))
+)
+train_ts <- ts(train$precip, start = train_start, frequency = 12)
 
 # Model
 fit_tbats <- forecast::tbats(train_ts, use.box.cox = NULL, use.trend = FALSE,
@@ -120,8 +121,8 @@ tbats_specification <- tibble(
   damped_trend = !is.null(fit_tbats$damping.parameter),
   seasonal_period = paste(fit_tbats$seasonal.periods, collapse = ","),
   harmonics = paste(fit_tbats$k.vector, collapse = ","),
-  mase_d = 0L,
-  mase_D = 1L,
+  mase_nonseasonal_difference = 0L,
+  mase_seasonal_difference = 1L,
   ljung_box_fitdf = 0L
 )
 
@@ -211,13 +212,31 @@ dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
 dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
 write.csv(tbats_specification, "output/tables/model_details/tbats_parameters.csv", row.names = FALSE)
 
-# STL plot
-suppressMessages(
-  suppressWarnings(
-    ggsave("output/plots/group_summary/stl_tbats_decomposition.png", p_stl,
-           width = 9, height = 6, dpi = 150)
-  )
+# TBATS-specific display: estimated level and trigonometric seasonal
+# components on the model's transformed scale.
+tbats_components <- forecast::tbats.components(fit_tbats)
+tbats_component_names <- colnames(tbats_components)
+if (is.null(tbats_component_names)) {
+  tbats_component_names <- paste0("Component ", seq_len(ncol(tbats_components)))
+}
+tbats_components_tbl <- tibble(
+  month = rep(train$month, times = ncol(tbats_components)),
+  component = rep(tbats_component_names, each = nrow(tbats_components)),
+  value = as.numeric(tbats_components)
 )
+
+p_tbats_components <- ggplot(tbats_components_tbl, aes(x = month, y = value)) +
+  geom_line(colour = "#0072B2", linewidth = 0.45) +
+  facet_wrap(vars(component), ncol = 1, scales = "free_y") +
+  labs(
+    title = "TBATS: Estimated model components",
+    subtitle = "Components are shown on the fitted Box-Cox scale",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal()
+ggsave("output/plots/group_summary/tbats_components.png",
+       p_tbats_components, width = 9, height = 7, dpi = 150)
 
 # Forecast plot
 zoom_from       <- yearmonth("2023 Jan")
@@ -230,8 +249,10 @@ hist_tbl <- rain |> as_tibble() |>
 fc_tbl <- tibble(
   month = rain$month[(nrow(rain) - h + 1):nrow(rain)],
   value = as.numeric(fc_tbats$mean),
-  lo80  = fc_tbats$lower[, "80%"], hi80 = fc_tbats$upper[, "80%"],
-  lo95  = fc_tbats$lower[, "95%"], hi95 = fc_tbats$upper[, "95%"]
+  lo80  = as.numeric(fc_tbats$lower[, "80%"]),
+  hi80  = as.numeric(fc_tbats$upper[, "80%"]),
+  lo95  = as.numeric(fc_tbats$lower[, "95%"]),
+  hi95  = as.numeric(fc_tbats$upper[, "95%"])
 )
 
 p_fc <- ggplot() +
@@ -247,7 +268,9 @@ p_fc <- ggplot() +
 ggsave("output/plots/group_summary/fc_tbats.png", p_fc, width = 8, height = 5, dpi = 150)
 
 png("output/plots/group_summary/resid_tbats.png", width = 800, height = 600, res = 150)
-forecast::checkresiduals(fit_tbats)
-dev.off()
+tryCatch(
+  forecast::checkresiduals(fit_tbats),
+  finally = dev.off()
+)
 
 cat("\nDone. Wrote the TBATS parameter table and 3 plots.\n")
