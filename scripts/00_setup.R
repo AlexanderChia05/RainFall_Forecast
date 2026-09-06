@@ -15,6 +15,7 @@ library(purrr)
 library(tidyr)
 library(fpp3)
 library(tseries)
+library(patchwork)
 
 acf_out_of_bounds <- function(resid, lag.max = 12) {
   r <- na.omit(resid)

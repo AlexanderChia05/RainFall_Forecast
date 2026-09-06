@@ -2,38 +2,10 @@
 
 # Shared setup and data acquisition make this script independently runnable.
 source("scripts/00_setup.R")
-source("scripts/01_data_pull.R")
+if (!file.exists("data/rain.rds")) source("scripts/01_data_pull.R")
+rain <- readRDS("data/rain.rds")
 
-cat("rain:", nrow(rain), "obs,", format(min(rain$month)), "to", format(max(rain$month)), "\n")
-cat("Missing before interpolation:", missing_before,
-    "| Missing after interpolation:", missing_after, "\n")
-
-# EDA
-p_raw <- rain |> autoplot(precip) +
-  labs(title = "KL monthly mean precipitation rate (mm/day)", y = "mm/day")
-p_season <- rain |> gg_season(precip) + labs(title = "Seasonal plot - monsoon cycle")
-p_subseries <- rain |> gg_subseries(precip) + labs(title = "Subseries plot - by calendar month")
-p_acf <- rain |> ACF(precip, lag_max = 36) |> autoplot() + labs(title = "ACF - raw series")
-p_pacf <- rain |> PACF(precip, lag_max = 36) |> autoplot() + labs(title = "PACF - raw series")
-
-print(rain |> features(precip, feat_stl))
-
-# Statistical tests
-cat("\n== ADF test ==\n")
-print(adf.test(rain$precip))
-
-cat("\n== KPSS test ==\n")
-print(kpss.test(rain$precip))
-
-cat("\n== Ljung-Box test: raw series ==\n")
-print(Box.test(rain$precip, lag = 12, type = "Ljung-Box"))
-print(Box.test(rain$precip, lag = 24, type = "Ljung-Box"))
-
-cat("\n== Mann-Kendall trend test ==\n")
-print(Kendall::MannKendall(rain$precip))
-
-cat("\n== Minimum precipitation ==\n")
-print(min(rain$precip, na.rm = TRUE))
+# Shared EDA and stationarity checks are centralized in 02_eda_stationarity.R.
 
 # Train/test split
 h     <- 12
@@ -42,7 +14,7 @@ train <- rain |> filter(month <= max(month) - h)
 # Model
 fit <- train |> model(
   snaive = SNAIVE(precip),
-  tslm   = TSLM(precip ~ trend() + fourier(K = 4))
+  tslm   = TSLM(precip ~ trend() + fourier(K = 3))
 )
 fc <- fit |> forecast(h = h)
 
@@ -67,7 +39,7 @@ fit |> select(tslm) |> gg_tsresiduals()
 tslm_parameters <- fit |>
   select(tslm) |>
   tidy() |>
-  mutate(model = "TSLM with trend and Fourier K=4") |>
+  mutate(model = "TSLM with trend and Fourier K=3") |>
   relocate(model)
 
 tslm_specification <- tibble(
@@ -75,7 +47,7 @@ tslm_specification <- tibble(
   estimation = "ordinary least squares",
   trend = "linear",
   seasonal_period = 12L,
-  fourier_K = 4L,
+  fourier_K = 3L,
   fourier_regressors = 8L,
   autoregressive_errors = FALSE
 )
@@ -106,7 +78,7 @@ cv_data <- train |>
 
 set.seed(2026)
 cv_acc <- cv_data |>
-  model(tslm = TSLM(precip ~ trend() + fourier(K = 4))) |>
+  model(tslm = TSLM(precip ~ trend() + fourier(K = 3))) |>
   forecast(h = h) |>
   accuracy(train, by = c(".model", ".id"))
 
@@ -131,20 +103,10 @@ dir.create("output/plots/group_summary", recursive = TRUE, showWarnings = FALSE)
 dir.create("output/tables/model_details", recursive = TRUE, showWarnings = FALSE)
 write.csv(tslm_parameters, "output/tables/model_details/tslm_parameters.csv", row.names = FALSE)
 
-# Forecast plot
-plot_from       <- yearmonth("2013 Jan")
-test_actual_tbl <- rain |> as_tibble() |> filter(month > max(train$month)) |>
-  transmute(month, precip)
-
-p_fc <- fc |> filter(.model == "tslm") |>
-  autoplot(rain |> filter(month >= plot_from), level = c(80, 95)) +
-  geom_line(data = test_actual_tbl, aes(x = month, y = precip),
-            color = "red", linewidth = 0.45) +
-  labs(title = "TSLM (trend + Fourier K=4): Forecast vs Actual", y = "mm/day", x = NULL) +
-  theme_minimal()
+# Forecast and residual plots
 save_fable_forecast_plot(
   fc |> filter(.model == "tslm"), rain, "TSLM + Fourier",
-  "TSLM (trend + Fourier K=4): Forecast vs Actual",
+  "TSLM (trend + Fourier K=3): Forecast vs Actual",
   "output/plots/group_summary/fc_tslm.png"
 )
 u_tslm <- augment(fit) |> filter(.model == "tslm") |> as_tibble()

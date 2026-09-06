@@ -10,8 +10,8 @@ set.seed(2026)
 fit <- train |> model(
   seasonal_naive = SNAIVE(precip),
   ets_additive   = ETS(precip ~ error("A") + trend("N") + season("A")),
-  arima_fourier  = ARIMA(precip ~ fourier(K = 4) + pdq() + PDQ(0, 0, 0)),
-  tslm_fourier   = TSLM(precip ~ trend() + fourier(K = 4))
+  arima_fourier  = ARIMA(precip ~ fourier(K = 3) + pdq() + PDQ(0, 0, 0)),
+  tslm_fourier   = TSLM(precip ~ trend() + fourier(K = 3))
 )
 
 fc <- fit |> forecast(h = h)
@@ -106,8 +106,8 @@ cv_fits <- cv_data |>
   model(
     seasonal_naive = SNAIVE(precip),
     ets_additive   = ETS(precip ~ error("A") + trend("N") + season("A")),
-    arima_fourier  = ARIMA(precip ~ fourier(K = 4) + pdq() + PDQ(0, 0, 0)),
-    tslm_fourier   = TSLM(precip ~ trend() + fourier(K = 4))
+    arima_fourier  = ARIMA(precip ~ fourier(K = 3) + pdq() + PDQ(0, 0, 0)),
+    tslm_fourier   = TSLM(precip ~ trend() + fourier(K = 3))
   )
 
 cv_acc <- cv_fits |> forecast(h = h) |> accuracy(train, by = c(".model", ".id"))
@@ -116,7 +116,8 @@ cv_summary <- cv_acc |>
   group_by(model = .model) |>
   summarise(mean_MASE = mean(MASE), sd_MASE = sd(MASE),
             min_MASE = min(MASE), max_MASE = max(MASE),
-            mean_RMSE = mean(RMSE), n_folds = n())
+            mean_RMSE = mean(RMSE), mean_MAE = mean(MAE),
+            mean_MAPE = mean(MAPE), n_folds = n())
 
 # TBATS CV
 cv_tbats <- map_dfr(origins, function(i) {
@@ -132,12 +133,27 @@ cv_tbats <- map_dfr(origins, function(i) {
     d = 0,
     D = 1
   )
-  tibble(MASE = acc["Test set", "MASE"], RMSE = acc["Test set", "RMSE"])
+  tibble(
+    MASE = acc["Test set", "MASE"], RMSE = acc["Test set", "RMSE"],
+    MAE = acc["Test set", "MAE"], MAPE = acc["Test set", "MAPE"],
+    coverage_80 = mean(te >= fc$lower[, "80%"] & te <= fc$upper[, "80%"]),
+    coverage_95 = mean(te >= fc$lower[, "95%"] & te <= fc$upper[, "95%"]),
+    width_80 = mean(fc$upper[, "80%"] - fc$lower[, "80%"]),
+    width_95 = mean(fc$upper[, "95%"] - fc$lower[, "95%"])
+  )
 })
+
+tbats_interval_calibration <- tibble(
+  nominal_level = c(80L, 95L),
+  empirical_coverage = c(mean(cv_tbats$coverage_80), mean(cv_tbats$coverage_95)),
+  mean_interval_width = c(mean(cv_tbats$width_80), mean(cv_tbats$width_95)),
+  forecast_count = nrow(cv_tbats) * h
+)
 cv_summary <- cv_summary |> bind_rows(
   cv_tbats |> summarise(model = "tbats", mean_MASE = mean(MASE), sd_MASE = sd(MASE),
                          min_MASE = min(MASE), max_MASE = max(MASE),
-                         mean_RMSE = mean(RMSE), n_folds = n())
+                         mean_RMSE = mean(RMSE), mean_MAE = mean(MAE),
+                         mean_MAPE = mean(MAPE), n_folds = n())
 ) |> arrange(mean_MASE)
 
 summary_tbl <- acc_test |>
@@ -176,8 +192,12 @@ cv_comparison <- cv_summary |>
       tbats = "TBATS"
     ),
     CV_RMSE = round(mean_RMSE, 3),
+    CV_MAE = round(mean_MAE, 3),
+    CV_MAPE = round(mean_MAPE, 3),
     CV_MASE = round(mean_MASE, 3),
     SD_MASE = round(sd_MASE, 3),
+    Min_MASE = round(min_MASE, 3),
+    Max_MASE = round(max_MASE, 3),
     folds = n_folds
   ) |>
   arrange(CV_MASE)
@@ -215,8 +235,8 @@ model_specifications <- tibble(
     "SNAIVE with seasonal period 12",
     "ETS(A,N,A)",
     paste0("ARIMA(", arima_p, ",", arima_d, ",", arima_q,
-           ") errors; seasonal order (0,0,0); Fourier K=4"),
-    "Linear trend; Fourier K=4; ordinary least squares",
+           ") errors; seasonal order (0,0,0); Fourier K=3"),
+    "Linear trend; Fourier K=3; ordinary least squares",
     tbats_model_label
   ),
   seasonal_period = 12L,
@@ -248,7 +268,7 @@ model_results <- accuracy_comparison |>
     model,
     Training_RMSE, Training_MAE, Training_MAPE, Training_MASE,
     Test_RMSE, Test_MAE, Test_MAPE, Test_MASE,
-    CV_RMSE, CV_MASE, SD_MASE, folds,
+    CV_RMSE, CV_MAE, CV_MAPE, CV_MASE, SD_MASE, Min_MASE, Max_MASE, folds,
     LB_pvalue_12, LB_pvalue_24, ACF_lags_out_12, ACF_lags_out_24
   )
 
@@ -260,8 +280,197 @@ cat("\n--- Residual Diagnostics ---\n")
 print(diagnostics_comparison)
 cat("\n--- Model Specifications ---\n")
 print(model_specifications)
+cat("\n--- TBATS Interval Calibration ---\n")
+print(tbats_interval_calibration)
 
 dir.create("output/tables", recursive = TRUE, showWarnings = FALSE)
 write.csv(model_results, "output/tables/model_results.csv", row.names = FALSE)
 write.csv(model_specifications, "output/tables/model_specifications.csv", row.names = FALSE)
 write.csv(package_versions, "output/tables/package_versions.csv", row.names = FALSE)
+write.csv(
+  tbats_interval_calibration,
+  "output/tables/tbats_interval_calibration.csv",
+  row.names = FALSE
+)
+
+# Candidate-specification audit --------------------------------------------
+# Select each model family's specification using the same rolling origins,
+# then use the untouched 2025 holdout as a separate confirmation.
+run_model_selection_audit <- function() {
+score_fable_cv <- function(candidate_fit, label) {
+  candidate_fit |>
+    forecast(h = h) |>
+    accuracy(train, by = c(".model", ".id")) |>
+    summarise(
+      specification = label,
+      CV_MASE = mean(MASE),
+      CV_RMSE = mean(RMSE),
+      CV_MAE = mean(MAE),
+      CV_MAPE = mean(MAPE),
+      SD_MASE = sd(MASE),
+      Min_MASE = min(MASE),
+      Max_MASE = max(MASE),
+      folds = n(),
+      .groups = "drop"
+    )
+}
+
+score_fable_holdout <- function(candidate_fit, label) {
+  candidate_fit |>
+    forecast(h = h) |>
+    accuracy(rain) |>
+    transmute(
+      specification = label,
+      Test_MASE = MASE,
+      Test_RMSE = RMSE,
+      Test_MAE = MAE,
+      Test_MAPE = MAPE
+    )
+}
+
+ets_audit <- bind_rows(
+  left_join(
+    score_fable_cv(
+      cv_data |> model(candidate = ETS(precip ~ error("A") + trend("N") + season("A"))),
+      "ETS(A,N,A)"
+    ),
+    score_fable_holdout(
+      train |> model(candidate = ETS(precip ~ error("A") + trend("N") + season("A"))),
+      "ETS(A,N,A)"
+    ),
+    by = "specification"
+  ),
+  left_join(
+    score_fable_cv(cv_data |> model(candidate = ETS(precip)), "ETS automatic"),
+    score_fable_holdout(train |> model(candidate = ETS(precip)), "ETS automatic"),
+    by = "specification"
+  )
+)
+
+fourier_audit <- purrr::map_dfr(1:5, function(k) {
+  arima_label <- paste0("ARIMA + Fourier K=", k)
+  tslm_label <- paste0("TSLM + Fourier K=", k)
+  bind_rows(
+    left_join(
+      score_fable_cv(
+        cv_data |> model(candidate = ARIMA(precip ~ fourier(K = k) + pdq() + PDQ(0, 0, 0))),
+        arima_label
+      ),
+      score_fable_holdout(
+        train |> model(candidate = ARIMA(precip ~ fourier(K = k) + pdq() + PDQ(0, 0, 0))),
+        arima_label
+      ),
+      by = "specification"
+    ),
+    left_join(
+      score_fable_cv(
+        cv_data |> model(candidate = TSLM(precip ~ trend() + fourier(K = k))),
+        tslm_label
+      ),
+      score_fable_holdout(
+        train |> model(candidate = TSLM(precip ~ trend() + fourier(K = k))),
+        tslm_label
+      ),
+      by = "specification"
+    )
+  )
+})
+
+score_tbats_candidate <- function(use_trend, use_damped, label) {
+  candidate_cv <- purrr::map_dfr(origins, function(i) {
+    tr <- train |> slice(1:i)
+    te <- train |> slice((i + 1):(i + h)) |> pull(precip)
+    candidate <- forecast::tbats(
+      ts(tr$precip, frequency = 12),
+      use.box.cox = NULL,
+      use.trend = use_trend,
+      use.damped.trend = use_damped,
+      seasonal.periods = 12
+    )
+    candidate_fc <- forecast::forecast(candidate, h = h)
+    candidate_acc <- forecast::accuracy(candidate_fc, te, d = 0, D = 1)
+    tibble(
+      MASE = candidate_acc["Test set", "MASE"],
+      RMSE = candidate_acc["Test set", "RMSE"],
+      MAE = candidate_acc["Test set", "MAE"],
+      MAPE = candidate_acc["Test set", "MAPE"]
+    )
+  })
+
+  candidate <- forecast::tbats(
+    train_ts,
+    use.box.cox = NULL,
+    use.trend = use_trend,
+    use.damped.trend = use_damped,
+    seasonal.periods = 12
+  )
+  candidate_fc <- forecast::forecast(candidate, h = h)
+  candidate_acc <- forecast::accuracy(candidate_fc, test_actual, d = 0, D = 1)
+
+  tibble(
+    specification = label,
+    CV_MASE = mean(candidate_cv$MASE),
+    CV_RMSE = mean(candidate_cv$RMSE),
+    CV_MAE = mean(candidate_cv$MAE),
+    CV_MAPE = mean(candidate_cv$MAPE),
+    SD_MASE = sd(candidate_cv$MASE),
+    Min_MASE = min(candidate_cv$MASE),
+    Max_MASE = max(candidate_cv$MASE),
+    folds = nrow(candidate_cv),
+    Test_MASE = candidate_acc["Test set", "MASE"],
+    Test_RMSE = candidate_acc["Test set", "RMSE"],
+    Test_MAE = candidate_acc["Test set", "MAE"],
+    Test_MAPE = candidate_acc["Test set", "MAPE"]
+  )
+}
+
+tbats_no_trend_audit <- tibble(
+  specification = "TBATS no trend",
+  CV_MASE = mean(cv_tbats$MASE),
+  CV_RMSE = mean(cv_tbats$RMSE),
+  CV_MAE = mean(cv_tbats$MAE),
+  CV_MAPE = mean(cv_tbats$MAPE),
+  SD_MASE = sd(cv_tbats$MASE),
+  Min_MASE = min(cv_tbats$MASE),
+  Max_MASE = max(cv_tbats$MASE),
+  folds = nrow(cv_tbats),
+  Test_MASE = acc_tbats_full["Test set", "MASE"],
+  Test_RMSE = acc_tbats_full["Test set", "RMSE"],
+  Test_MAE = acc_tbats_full["Test set", "MAE"],
+  Test_MAPE = acc_tbats_full["Test set", "MAPE"]
+)
+
+tbats_audit <- bind_rows(
+  tbats_no_trend_audit,
+  score_tbats_candidate(NULL, NULL, "TBATS automatic trend")
+)
+
+model_selection_audit <- bind_rows(ets_audit, fourier_audit, tbats_audit) |>
+  arrange(CV_MASE)
+
+model_selection_family_best <- model_selection_audit |>
+  mutate(family = case_when(
+    grepl("^ARIMA", specification) ~ "ARIMA + Fourier",
+    grepl("^TSLM", specification) ~ "TSLM + Fourier",
+    grepl("^ETS", specification) ~ "ETS",
+    grepl("^TBATS", specification) ~ "TBATS"
+  )) |>
+  group_by(family) |>
+  slice_min(CV_MASE, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  arrange(CV_MASE)
+
+cat("\n--- Candidate Specification Audit ---\n")
+print(model_selection_family_best)
+write.csv(
+  model_selection_audit,
+  "output/tables/model_selection_audit.csv",
+  row.names = FALSE
+)
+}
+
+if (identical(tolower(Sys.getenv("RUN_MODEL_AUDIT", "false")), "true")) {
+  run_model_selection_audit()
+} else if (!file.exists("output/tables/model_selection_audit.csv")) {
+  message("Model audit skipped. Set RUN_MODEL_AUDIT=true to generate it.")
+}
